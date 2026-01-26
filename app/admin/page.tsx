@@ -20,16 +20,50 @@ export default function AdminPage() {
                 return;
             }
 
-            // Check if user is in the ALLOWED_ADMINS list
-            console.log("Current User Email:", user.email);
-            console.log("Allowed Admins:", ALLOWED_ADMINS);
+            const checkAdmin = async () => {
+                let isAdmin = false;
 
-            if (user.email && ALLOWED_ADMINS.map(e => e.toLowerCase()).includes(user.email.toLowerCase())) {
-                setAuthorized(true);
-            } else {
-                setAuthorized(false);
-            }
-            setChecking(false);
+                // 1. Check Legacy Allowed List
+                if (user.email && ALLOWED_ADMINS.map(e => e.toLowerCase()).includes(user.email.toLowerCase())) {
+                    isAdmin = true;
+                }
+
+                // 2. Check Firestore Role
+                if (!isAdmin) {
+                    try {
+                        // We need to fetch userData here manually if not available in context, 
+                        // but let's just check the firestore directly to be safe
+                        // Actually, useAuth provides userData, let's use it if available or wait?
+                        // Context 'userData' might be null initially if useAuth is still syncing? 
+                        // useAuth 'loading' is false, so userData should be ready if it exists.
+
+                        // However, let's fetch directly to be 100% sure and robust
+                        const { doc, getDoc } = await import('firebase/firestore');
+                        const { db } = await import('@/lib/firebase');
+                        const userDoc = await getDoc(doc(db, 'teachers', user.uid));
+
+                        if (userDoc.exists()) {
+                            const role = userDoc.data().role;
+                            if (['admin', 'super_admin', 'center_admin', 'dept_admin'].includes(role)) {
+                                isAdmin = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error checking admin role:", e);
+                    }
+                }
+
+                // Auto-upgrade legacy admin to Firestore admin role if needed
+                if (isAdmin) {
+                    // Optionally update firestore to reflect this role for future consistency
+                    // We can do this silently
+                }
+
+                setAuthorized(isAdmin);
+                setChecking(false);
+            };
+
+            checkAdmin();
         }
     }, [user, loading, router]);
 

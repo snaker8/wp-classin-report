@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "wp-classin-report"
+  },
+  "targets": {
+    "wp-classin-report": {
+      "hosting": {
+        "main": [
+          "wp-classin-report"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

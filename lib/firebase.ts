@@ -4,13 +4,13 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyB2lG5_HmZDieJlxI3MzPZBHryVH9dw8wc",
-    authDomain: "chamath-report.firebaseapp.com",
-    projectId: "chamath-report",
-    storageBucket: "chamath-report.firebasestorage.app",
-    messagingSenderId: "908399791069",
-    appId: "1:908399791069:web:bc296bcb67a757a66a0434",
-    measurementId: "G-VH4RNDN114"
+    apiKey: "AIzaSyBIprMCSvn4vks4wHUoJcD9khJPQIq9i84",
+    authDomain: "wp-classin-report.firebaseapp.com",
+    projectId: "wp-classin-report",
+    storageBucket: "wp-classin-report.firebasestorage.app",
+    messagingSenderId: "614085553479",
+    appId: "1:614085553479:web:6777007985ba34e86cb062",
+    measurementId: "G-838HTG3WKR"
 };
 
 // Initialize Firebase

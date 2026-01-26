@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, orderBy, limit, getDocs, where, Timestamp, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, Timestamp, deleteDoc, doc, setDoc, QueryConstraint } from 'firebase/firestore';
 import { Icon } from '@/components/ui/Icon';
 import { useRouter } from 'next/navigation';
 import { ReportData } from '@/components/report/ReportView';
+import TeacherManager from '@/components/admin/TeacherManager';
 
 interface ReportDoc {
     id: string;
@@ -14,6 +15,7 @@ interface ReportDoc {
     className: string;
     courseName: string;
     teacherName: string;
+    teacherId: string;
     centerName: string;
     department?: string;
     createdAt: Timestamp;
@@ -42,6 +44,14 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     const [centers, setCenters] = useState<string[]>([]);
     const [departments, setDepartments] = useState<string[]>([]);
 
+    // Admin Settings Modal
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [adminCenterInput, setAdminCenterInput] = useState('');
+    const [savingSettings, setSavingSettings] = useState(false);
+
+    // Admin Tabs
+    const [activeTab, setActiveTab] = useState<'reports' | 'teachers'>('reports');
+
     useEffect(() => {
         if (!loading) {
             if (!user) {
@@ -64,11 +74,38 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
             setFetching(true);
             try {
                 let q;
-                q = query(
-                    collection(db, 'reports'),
-                    where('month', '==', monthFilter),
-                    orderBy('createdAt', 'desc')
-                );
+                const baseRef = collection(db, 'reports');
+
+                // Role-based Query Construction
+                if (viewMode === 'teacher') {
+                    // Teacher mode: fetching all for month, filtering locally for 'onlyMyReports' usually
+                    // But for performance, maybe we should filter by teacherId? 
+                    // stick to existing logic for teacher mode to avoid breaking 'all center' view if they are allowed?
+                    // Actually teachers usually only see their center reports in filter logic (line 136).
+                    q = query(baseRef, where('month', '==', monthFilter), orderBy('createdAt', 'desc'));
+                } else {
+                    // Start with base constraints
+                    const constraints: QueryConstraint[] = [
+                        where('month', '==', monthFilter),
+                        orderBy('createdAt', 'desc')
+                    ];
+
+                    const role = userData?.role;
+                    if (role === 'center_admin' && userData?.centerName) {
+                        constraints.push(where('centerName', '==', userData.centerName));
+                    } else if (role === 'dept_admin' && userData?.centerName) {
+                        constraints.push(where('centerName', '==', userData.centerName));
+                        // Note: department might not always be present on reports or might be optional?
+                        // If we enforce it, we might miss reports where dept is missing.
+                        // But for dept_admin, they should only see their dept.
+                        if (userData.department) {
+                            constraints.push(where('department', '==', userData.department));
+                        }
+                    }
+                    // super_admin / admin (legacy) sees all
+
+                    q = query(baseRef, ...constraints);
+                }
 
                 const querySnapshot = await getDocs(q);
                 const docs: ReportDoc[] = [];
@@ -89,14 +126,25 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                 // Set initial center filter based on role/mode
                 if (viewMode === 'teacher' && userData?.centerName) {
                     setSelectedCenter(userData.centerName);
-                } else if (viewMode === 'admin' && !selectedCenter) {
-                    setSelectedCenter('All');
+                } else if (viewMode === 'admin') {
+                    // For admins, we might need to force the selection
+                    const userRole = userData?.role;
+                    if (userRole === 'center_admin' || userRole === 'dept_admin') {
+                        if (userData?.centerName) setSelectedCenter(userData.centerName);
+                    } else if (!selectedCenter) {
+                        setSelectedCenter('All');
+                    }
+
+                    if (userRole === 'dept_admin' && userData?.department) {
+                        setSelectedDepartment(userData.department);
+                    }
                 }
 
             } catch (error) {
                 console.error("Error fetching reports:", error);
                 // Fallback attempt
                 try {
+                    // Simple fallback query
                     const q2 = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
                     const s2 = await getDocs(q2);
                     const docs2: ReportDoc[] = [];
@@ -109,7 +157,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         };
 
         fetchReports();
-    }, [user, monthFilter, userData, viewMode]);
+    }, [user, monthFilter, userData, viewMode, selectedCenter]);
 
     const getGradeFromClassName = (className: string) => {
         if (!className) return '기타';
@@ -145,15 +193,9 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         }
 
         // 4. My Reports Filter
-        if (onlyMyReports) { // Applied for both if checked, but ViewMode teacher defaults/forces?
-            // Actually, if viewMode is teacher, we might want to allow seeing other teachers in SAME center if checkbox is off?
-            // Previous logic: if role=teacher && onlyMyReports.
-
-            // User Request: "Teachers can only manage/delete THEIR reports".
-            // But can they VIEW others? 
-            // "Teachers should not access Admin page"
-
-            if (report.teacherName !== userData?.displayName) return false;
+        if (onlyMyReports) {
+            // Use UID for robust filtering instead of name
+            if (report.teacherId !== user?.uid) return false;
         }
 
         return true;
@@ -168,7 +210,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         groupedReports[grade].push(report);
     });
 
-    const getAnalytics = () => {
+    const stats = useMemo(() => {
         const byCenter: Record<string, number> = {};
         const byClass: Record<string, number> = {};
         const byStudent: Record<string, number> = {};
@@ -193,7 +235,8 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         });
 
         const byDay: Record<string, number> = {};
-        const daysInMonth = new Date(parseInt(monthFilter.split('-')[0]), parseInt(monthFilter.split('-')[1]), 0).getDate();
+        const [year, month] = monthFilter.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
         for (let i = 1; i <= daysInMonth; i++) {
             byDay[i] = 0;
         }
@@ -205,9 +248,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         });
 
         return { byCenter, byClass, byStudent, byTeacher, byDay, daysInMonth, byDepartment };
-    };
-
-    const stats = getAnalytics();
+    }, [filteredReports, monthFilter]);
 
     const handleDeleteReport = async (reportId: string) => {
         if (!confirm('정말로 이 리포트를 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.')) {
@@ -220,6 +261,24 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         } catch (error) {
             console.error('Error deleting report:', error);
             alert('리포트 삭제 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleSaveAdminCenter = async () => {
+        if (!user) return;
+        setSavingSettings(true);
+        try {
+            await setDoc(doc(db, 'teachers', user.uid), {
+                centerName: adminCenterInput
+            }, { merge: true });
+            alert('소속 센터가 저장되었습니다. 변경 사항을 적용하려면 새로고침하세요.');
+            setShowSettingsModal(false);
+            window.location.reload(); // Simple reload to reflect auth context changes if needed
+        } catch (error) {
+            console.error("Error saving center:", error);
+            alert("저장 중 오류가 발생했습니다.");
+        } finally {
+            setSavingSettings(false);
         }
     };
 
@@ -283,280 +342,365 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                             <Icon name="PenTool" size={14} />
                             리포트 생성하기
                         </button>
-                    </div>
-                </div>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
-                    <div className="relative flex-1 min-w-[240px]">
-                        <Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="이름, 클래스, 과정, 주제 검색..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-all"
-                        />
-                    </div>
-
-                    {viewMode === 'admin' && (
-                        <div className="relative min-w-[160px]">
-                            <select
-                                value={selectedCenter}
-                                onChange={(e) => setSelectedCenter(e.target.value)}
-                                className="w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700"
+                        {viewMode === 'admin' && (
+                            <button
+                                onClick={() => {
+                                    setAdminCenterInput(userData?.centerName || '');
+                                    setShowSettingsModal(true);
+                                }}
+                                className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-50 hover:text-amber-600 hover:border-amber-300 transition-colors shadow-sm flex items-center gap-2"
                             >
-                                <option value="All">All Centers</option>
-                                {centers.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                            <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                        </div>
-                    )}
-
-                    <div className="relative min-w-[160px]">
-                        <select
-                            value={selectedDepartment}
-                            onChange={(e) => setSelectedDepartment(e.target.value)}
-                            className="w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700"
-                        >
-                            <option value="All">All Departments</option>
-                            {departments.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                        <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                                <Icon name="Settings" size={16} />
+                                <span>관리자 소속 설정</span>
+                            </button>
+                        )}
                     </div>
-
-                    {/* Simplified Teacher View - Only My Reports is IMPLICIT if viewMode is teacher */}
-                    {viewMode === 'teacher' ? (
-                        <div className="px-3 py-2 bg-indigo-50 text-indigo-700 text-sm font-bold rounded-lg border border-indigo-100 flex items-center gap-2">
-                            <Icon name="UserCheck" size={16} />
-                            내 리포트만 보기 중
-                        </div>
-                    ) : (
-                        // Admin can toggle
-                        <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors select-none">
-                            <input
-                                type="checkbox"
-                                checked={onlyMyReports}
-                                onChange={(e) => setOnlyMyReports(e.target.checked)}
-                                className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
-                            />
-                            <span className="text-sm font-bold text-slate-600">내 리포트만 보기</span>
-                        </label>
-                    )}
-
-                    <button onClick={downloadCSV} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
-                        <Icon name="Download" size={16} /> CSV
-                    </button>
                 </div>
 
-                {fetching ? (
-                    <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
-                        <Icon name="Loader2" className="animate-spin mx-auto text-amber-500 mb-2" size={32} />
-                        <p className="text-slate-500">데이터를 불러오는 중입니다...</p>
+                {/* Admin Tabs Navigation */}
+                {viewMode === 'admin' && (
+                    <div className="flex gap-4 border-b border-slate-200">
+                        <button
+                            onClick={() => setActiveTab('reports')}
+                            className={`pb-3 px-1 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'reports' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Icon name="FileText" size={16} />
+                            리포트 관리
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('teachers')}
+                            className={`pb-3 px-1 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'teachers' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Icon name="Users" size={16} />
+                            선생님 & 센터 관리
+                        </button>
                     </div>
-                ) : showAnalytics ? (
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="FileText" size={14} /> Total Reports</div>
-                                <div className="text-3xl font-bold text-slate-900">{filteredReports.length}</div>
-                            </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Users" size={14} /> Active Students</div>
-                                <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byStudent).length}</div>
-                            </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Building" size={14} /> Active Classes</div>
-                                <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byClass).length}</div>
-                            </div>
-                            <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Award" size={14} /> Teachers</div>
-                                <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byTeacher).length}</div>
-                            </div>
-                        </div>
+                )}
 
-                        <div className="grid md:grid-cols-2 gap-6">
-                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                    <Icon name="PieChart" size={20} className="text-amber-500" />
-                                    Center Distribution
-                                </h3>
-                                <div className="space-y-3">
-                                    {Object.entries(stats.byCenter).sort(([, a], [, b]) => b - a).map(([center, count]) => (
-                                        <div key={center}>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span className="font-medium text-slate-700">{center}</span>
-                                                <span className="text-slate-500 font-mono">{count} ({Math.round(count / filteredReports.length * 100)}%)</span>
-                                            </div>
-                                            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                                                <div className="bg-amber-500 h-2.5 rounded-full" style={{ width: `${(count / filteredReports.length) * 100}%` }}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                    <Icon name="PieChart" size={20} className="text-indigo-500" />
-                                    Department Distribution
-                                </h3>
-                                <div className="space-y-3">
-                                    {Object.entries(stats.byDepartment || {}).sort(([, a], [, b]) => b - a).map(([dept, count]) => (
-                                        <div key={dept}>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span className="font-medium text-slate-700">{dept}</span>
-                                                <span className="text-slate-500 font-mono">{count} ({Math.round(count / filteredReports.length * 100)}%)</span>
-                                            </div>
-                                            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                                                <div className="bg-indigo-500 h-2.5 rounded-full" style={{ width: `${(count / filteredReports.length) * 100}%` }}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:col-span-2">
-                                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                    <Icon name="TrendingUp" size={20} className="text-blue-500" />
-                                    Top Active Classes
-                                </h3>
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    {Object.entries(stats.byClass).sort(([, a], [, b]) => b - a).slice(0, 10).map(([cls, count], idx) => (
-                                        <div key={cls} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded bg-white border border-slate-100">
-                                            <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${idx < 3 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                                {idx + 1}
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="text-sm font-medium text-slate-800">{cls}</div>
-                                            </div>
-                                            <div className="text-sm font-bold text-slate-900">{count}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                <Icon name="LineChart" size={20} className="text-emerald-500" />
-                                Daily Activity ({monthFilter})
-                            </h3>
-                            <div className="flex items-end justify-between gap-1 h-32 pl-4 border-l border-b border-slate-200">
-                                {Array.from({ length: stats.daysInMonth }, (_, i) => i + 1).map(day => {
-                                    const count = stats.byDay[day];
-                                    const date = new Date(parseInt(monthFilter.split('-')[0]), parseInt(monthFilter.split('-')[1]) - 1, day);
-                                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-
-                                    const max = Math.max(10, ...Object.values(stats.byDay));
-                                    const height = (count / max) * 100;
-
-                                    return (
-                                        <div key={day} className="flex-1 flex flex-col justify-end items-center group relative cursor-default">
-                                            {count > 0 && (
-                                                <div className="absolute -top-8 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none whitespace-nowrap">
-                                                    {day}일: {count}건
-                                                </div>
-                                            )}
-                                            <div
-                                                className={`w-full mx-[1px] rounded-t-sm transition-all ${count > 0 ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-transparent'}`}
-                                                style={{ height: `${height}%`, minHeight: count > 0 ? '4px' : '0' }}
-                                            ></div>
-                                            <span className={`text-[9px] mt-1 ${isWeekend ? 'text-red-400 font-bold' : 'text-slate-400'}`}>
-                                                {day % 5 === 0 || day === 1 ? day : ''}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </div>
+                {/* Content Area */}
+                {activeTab === 'teachers' && viewMode === 'admin' ? (
+                    <TeacherManager />
                 ) : (
-                    <div className="space-y-8">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total Reports</div>
-                                <div className="text-2xl font-bold text-slate-900">{filteredReports.length}</div>
+                    <>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
+                            <div className="relative flex-1 min-w-[240px]">
+                                <Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="text"
+                                    placeholder="이름, 클래스, 과정, 주제 검색..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-all"
+                                />
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Students</div>
-                                <div className="text-2xl font-bold text-slate-900">{new Set(filteredReports.map(r => r.studentName)).size}</div>
+
+                            {viewMode === 'admin' && (
+                                <div className="relative min-w-[160px]">
+                                    <select
+                                        value={selectedCenter}
+                                        onChange={(e) => setSelectedCenter(e.target.value)}
+                                        disabled={userData?.role === 'center_admin' || userData?.role === 'dept_admin'}
+                                        className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'center_admin' || userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
+                                    >
+                                        <option value="All">All Centers</option>
+                                        {centers.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                                </div>
+                            )}
+
+                            <div className="relative min-w-[160px]">
+                                <select
+                                    value={selectedDepartment}
+                                    onChange={(e) => setSelectedDepartment(e.target.value)}
+                                    disabled={userData?.role === 'dept_admin'}
+                                    className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
+                                >
+                                    <option value="All">All Departments</option>
+                                    {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                                <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                             </div>
+
+                            {/* Simplified Teacher View - Only My Reports is IMPLICIT if viewMode is teacher */}
+                            {viewMode === 'teacher' ? (
+                                <div className="px-3 py-2 bg-indigo-50 text-indigo-700 text-sm font-bold rounded-lg border border-indigo-100 flex items-center gap-2">
+                                    <Icon name="UserCheck" size={16} />
+                                    내 리포트만 보기 중
+                                </div>
+                            ) : (
+                                // Admin can toggle
+                                <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={onlyMyReports}
+                                        onChange={(e) => setOnlyMyReports(e.target.checked)}
+                                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                                    />
+                                    <span className="text-sm font-bold text-slate-600">내 리포트만 보기</span>
+                                </label>
+                            )}
+
+                            <button onClick={downloadCSV} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                                <Icon name="Download" size={16} /> CSV
+                            </button>
                         </div>
 
-                        {filteredReports.length === 0 ? (
+                        {fetching ? (
                             <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
-                                <Icon name="FileX" className="mx-auto text-slate-300 mb-4" size={48} />
-                                <p className="text-slate-500 font-medium">검색 조건에 맞는 리포트가 없습니다.</p>
+                                <Icon name="Loader2" className="animate-spin mx-auto text-amber-500 mb-2" size={32} />
+                                <p className="text-slate-500">데이터를 불러오는 중입니다...</p>
                             </div>
-                        ) : (
-                            gradeOrder.concat(Object.keys(groupedReports).filter(k => !gradeOrder.includes(k))).map(grade => {
-                                const gradeReports = groupedReports[grade];
-                                if (!gradeReports || gradeReports.length === 0) return null;
+                        ) : showAnalytics ? (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="FileText" size={14} /> Total Reports</div>
+                                        <div className="text-3xl font-bold text-slate-900">{filteredReports.length}</div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Users" size={14} /> Active Students</div>
+                                        <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byStudent).length}</div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Building" size={14} /> Active Classes</div>
+                                        <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byClass).length}</div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2 flex items-center gap-2"><Icon name="Award" size={14} /> Teachers</div>
+                                        <div className="text-3xl font-bold text-slate-900">{Object.keys(stats.byTeacher).length}</div>
+                                    </div>
+                                </div>
 
-                                return (
-                                    <div key={grade} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                        <div className="bg-slate-900 px-6 py-3 flex items-center justify-between">
-                                            <h3 className="text-base font-bold text-white flex items-center gap-2">
-                                                <span className="w-2 h-8 bg-amber-500 rounded-sm inline-block mr-1"></span>
-                                                {grade}
-                                                <span className="text-slate-400 text-sm font-normal ml-2">({gradeReports.length})</span>
-                                            </h3>
-                                        </div>
-                                        <div className="divide-y divide-slate-100">
-                                            {gradeReports.map(report => (
-                                                <div key={report.id} className="p-4 hover:bg-slate-50 transition-colors flex flex-col md:flex-row items-center gap-4">
-                                                    <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-12 gap-4 items-center w-full">
-                                                        <div className="col-span-1 md:col-span-2">
-                                                            <div className="text-sm text-slate-500 mb-0.5">{report.createdAt?.toDate().toLocaleDateString()}</div>
-                                                            <div className="text-xs text-slate-400">{report.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                                                        </div>
-                                                        <div className="col-span-1 md:col-span-2">
-                                                            <div className="font-bold text-slate-900 text-lg">{report.studentName}</div>
-                                                        </div>
-                                                        <div className="col-span-2 md:col-span-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="px-2 py-0.5 bg-slate-100 rounded text-xs font-bold text-slate-600">{report.className}</span>
-                                                            </div>
-                                                            <div className="text-xs text-slate-400 mt-1 truncate">{report.courseName}</div>
-                                                        </div>
-                                                        <div className="col-span-2 md:col-span-2">
-                                                            <div className="text-sm font-medium text-slate-900">{report.teacherName}</div>
-                                                            <div className="flex gap-1 flex-wrap">
-                                                                <div className="text-xs text-amber-600 font-bold uppercase">{report.centerName}</div>
-                                                                {report.department && (
-                                                                    <div className="text-xs text-indigo-600 font-bold uppercase">({report.department})</div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="col-span-2 md:col-span-4">
-                                                            <div className="text-sm text-slate-700 font-medium truncate">{report.reportData?.report_info?.topic}</div>
-                                                        </div>
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                            <Icon name="PieChart" size={20} className="text-amber-500" />
+                                            Center Distribution
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {Object.entries(stats.byCenter).sort(([, a], [, b]) => (b as number) - (a as number)).map(([center, count]) => (
+                                                <div key={center}>
+                                                    <div className="flex justify-between text-sm mb-1">
+                                                        <span className="font-medium text-slate-700">{center}</span>
+                                                        <span className="text-slate-500 font-mono">{count} ({Math.round(count / filteredReports.length * 100)}%)</span>
                                                     </div>
-                                                    <div className="flex-shrink-0 w-full md:w-auto flex justify-end gap-2">
-                                                        <button
-                                                            onClick={() => window.open(`${window.location.origin}/report/${report.id}`, '_blank')}
-                                                            className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2.5 rounded-lg hover:bg-amber-100 transition-colors font-bold text-sm"
-                                                        >
-                                                            <Icon name="Link" size={14} />
-                                                            <span className="break-keep">View Report</span>
-                                                        </button>
-                                                        {(viewMode === 'admin' || report.teacherName === userData?.displayName) && (
-                                                            <button
-                                                                onClick={() => handleDeleteReport(report.id)}
-                                                                className="flex items-center gap-2 bg-white text-red-500 px-3 py-2.5 rounded-lg hover:bg-red-50 border border-red-200 transition-colors font-bold text-sm shadow-sm"
-                                                                title="리포트 삭제"
-                                                            >
-                                                                <Icon name="Trash2" size={14} />
-                                                            </button>
-                                                        )}
+                                                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                                        <div className="bg-amber-500 h-2.5 rounded-full" style={{ width: `${(count / filteredReports.length) * 100}%` }}></div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
-                                );
-                            })
+
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                            <Icon name="PieChart" size={20} className="text-indigo-500" />
+                                            Department Distribution
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {Object.entries(stats.byDepartment || {}).sort(([, a], [, b]) => (b as number) - (a as number)).map(([dept, count]) => (
+                                                <div key={dept}>
+                                                    <div className="flex justify-between text-sm mb-1">
+                                                        <span className="font-medium text-slate-700">{dept}</span>
+                                                        <span className="text-slate-500 font-mono">{count} ({Math.round(count / filteredReports.length * 100)}%)</span>
+                                                    </div>
+                                                    <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                                        <div className="bg-indigo-500 h-2.5 rounded-full" style={{ width: `${(count / filteredReports.length) * 100}%` }}></div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:col-span-2">
+                                        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                            <Icon name="TrendingUp" size={20} className="text-blue-500" />
+                                            Top Active Classes
+                                        </h3>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            {Object.entries(stats.byClass).sort(([, a], [, b]) => (b as number) - (a as number)).slice(0, 10).map(([cls, count], idx) => (
+                                                <div key={cls} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded bg-white border border-slate-100">
+                                                    <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${idx < 3 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="text-sm font-medium text-slate-800">{cls}</div>
+                                                    </div>
+                                                    <div className="text-sm font-bold text-slate-900">{count}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                        <Icon name="LineChart" size={20} className="text-emerald-500" />
+                                        Daily Activity ({monthFilter})
+                                    </h3>
+                                    <div className="flex items-end justify-between gap-1 h-32 pl-4 border-l border-b border-slate-200">
+                                        {Array.from({ length: stats.daysInMonth }, (_, i) => i + 1).map(day => {
+                                            const count = stats.byDay[day];
+                                            const date = new Date(parseInt(monthFilter.split('-')[0]), parseInt(monthFilter.split('-')[1]) - 1, day);
+                                            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                                            const max = Math.max(10, ...Object.values(stats.byDay));
+                                            const height = (count / max) * 100;
+
+                                            return (
+                                                <div key={day} className="flex-1 flex flex-col justify-end items-center group relative cursor-default">
+                                                    {count > 0 && (
+                                                        <div className="absolute -top-8 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none whitespace-nowrap">
+                                                            {day}일: {count}건
+                                                        </div>
+                                                    )}
+                                                    <div
+                                                        className={`w-full mx-[1px] rounded-t-sm transition-all ${count > 0 ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-transparent'}`}
+                                                        style={{ height: `${height}%`, minHeight: count > 0 ? '4px' : '0' }}
+                                                    ></div>
+                                                    <span className={`text-[9px] mt-1 ${isWeekend ? 'text-red-400 font-bold' : 'text-slate-400'}`}>
+                                                        {day % 5 === 0 || day === 1 ? day : ''}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total Reports</div>
+                                        <div className="text-2xl font-bold text-slate-900">{filteredReports.length}</div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Students</div>
+                                        <div className="text-2xl font-bold text-slate-900">{new Set(filteredReports.map(r => r.studentName)).size}</div>
+                                    </div>
+                                </div>
+
+                                {filteredReports.length === 0 ? (
+                                    <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
+                                        <Icon name="FileX" className="mx-auto text-slate-300 mb-4" size={48} />
+                                        <p className="text-slate-500 font-medium">검색 조건에 맞는 리포트가 없습니다.</p>
+                                    </div>
+                                ) : (
+                                    gradeOrder.concat(Object.keys(groupedReports).filter(k => !gradeOrder.includes(k))).map(grade => {
+                                        const gradeReports = groupedReports[grade];
+                                        if (!gradeReports || gradeReports.length === 0) return null;
+
+                                        return (
+                                            <div key={grade} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                                <div className="bg-slate-900 px-6 py-3 flex items-center justify-between">
+                                                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                                        <span className="w-2 h-8 bg-amber-500 rounded-sm inline-block mr-1"></span>
+                                                        {grade}
+                                                        <span className="text-slate-400 text-sm font-normal ml-2">({gradeReports.length})</span>
+                                                    </h3>
+                                                </div>
+                                                <div className="divide-y divide-slate-100">
+                                                    {gradeReports.map(report => (
+                                                        <div key={report.id} className="p-4 hover:bg-slate-50 transition-colors flex flex-col md:flex-row items-center gap-4">
+                                                            <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-12 gap-4 items-center w-full">
+                                                                <div className="col-span-1 md:col-span-2">
+                                                                    <div className="text-sm text-slate-500 mb-0.5">{report.createdAt?.toDate().toLocaleDateString()}</div>
+                                                                    <div className="text-xs text-slate-400">{report.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                                                </div>
+                                                                <div className="col-span-1 md:col-span-2">
+                                                                    <div className="font-bold text-slate-900 text-lg">{report.studentName}</div>
+                                                                </div>
+                                                                <div className="col-span-2 md:col-span-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-xs font-bold text-slate-600">{report.className}</span>
+                                                                    </div>
+                                                                    <div className="text-xs text-slate-400 mt-1 truncate">{report.courseName}</div>
+                                                                </div>
+                                                                <div className="col-span-2 md:col-span-2">
+                                                                    <div className="text-sm font-medium text-slate-900">{report.teacherName}</div>
+                                                                    <div className="flex gap-1 flex-wrap">
+                                                                        <div className="text-xs text-amber-600 font-bold uppercase">{report.centerName}</div>
+                                                                        {report.department && (
+                                                                            <div className="text-xs text-indigo-600 font-bold uppercase">({report.department})</div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="col-span-2 md:col-span-4">
+                                                                    <div className="text-sm text-slate-700 font-medium truncate">{report.reportData?.report_info?.topic}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-shrink-0 w-full md:w-auto flex justify-end gap-2">
+                                                                <button
+                                                                    onClick={() => window.open(`${window.location.origin}/report/${report.id}`, '_blank')}
+                                                                    className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2.5 rounded-lg hover:bg-amber-100 transition-colors font-bold text-sm"
+                                                                >
+                                                                    <Icon name="Link" size={14} />
+                                                                    <span className="break-keep">View Report</span>
+                                                                </button>
+                                                                {(viewMode === 'admin' || report.teacherName === userData?.displayName) && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteReport(report.id)}
+                                                                        className="flex items-center gap-2 bg-red-100 text-red-600 px-3 py-2.5 rounded-lg hover:bg-red-200 border border-red-300 transition-colors font-bold text-sm shadow-sm"
+                                                                        title="리포트 삭제"
+                                                                    >
+                                                                        <Icon name="Trash2" size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
                         )}
+                    </>
+                )}
+
+                {/* Admin Settings Modal */}
+                {showSettingsModal && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+                        <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-lg font-bold text-slate-900">관리자 소속 설정</h3>
+                                <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-slate-600">
+                                    <Icon name="X" size={20} />
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-500">
+                                관리자님의 소속 센터를 입력해주세요.<br />
+                                이 정보는 리포트 생성 및 대시보드 상단에 표시됩니다.
+                            </p>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">Center Name</label>
+                                <input
+                                    type="text"
+                                    value={adminCenterInput}
+                                    onChange={(e) => setAdminCenterInput(e.target.value)}
+                                    className="w-full px-4 py-2 border border-slate-300 rounded focus:border-amber-500 outline-none"
+                                    placeholder="예: 과사람 의대관"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                    onClick={() => setShowSettingsModal(false)}
+                                    className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    onClick={handleSaveAdminCenter}
+                                    disabled={savingSettings}
+                                    className="px-4 py-2 bg-slate-900 text-white rounded font-bold hover:bg-slate-800 disabled:opacity-50"
+                                >
+                                    {savingSettings ? '저장 중...' : '저장하기'}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

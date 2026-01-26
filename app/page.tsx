@@ -5,10 +5,24 @@ import ReportGenerator from "@/components/report/ReportGenerator";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
+// Allow up to 5 minutes for Pro mode analysis (Server Action timeout)
+export const maxDuration = 300;
 
 export default function Home() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -48,6 +62,14 @@ export default function Home() {
             <a href={userData?.role === 'teacher' ? "/teacher" : "/admin"} className="hover:text-amber-500 transition-colors">
               {userData?.role === 'teacher' ? '내 리포트 관리' : '관리자'}
             </a>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 hover:text-red-400 transition-colors pl-2 border-l border-slate-700"
+              title="로그아웃"
+            >
+              <Icon name="LogOut" size={14} />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
         </div>
       </header>

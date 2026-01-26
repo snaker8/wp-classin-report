@@ -14,9 +14,17 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
+export const maxDuration = 300; // Allow 5 minutes for AI generation
+
 export const metadata: Metadata = {
   title: "과사람 의대관 | Premium Report System",
   description: "ClassIn Learning Report Analysis System",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({

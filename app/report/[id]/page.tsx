@@ -1,90 +1,55 @@
-'use client';
+import { Metadata } from 'next';
+import ReportClient from './ReportClient';
 
-import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { ReportView, ReportData } from '@/components/report/ReportView';
-import { Icon } from '@/components/ui/Icon';
+interface Props {
+    params: { id: string };
+}
 
-export default function PublicReportPage({ params }: { params: { id: string } }) {
-    const [reportData, setReportData] = useState<ReportData | null>(null);
-    const [metaData, setMetaData] = useState<{
-        studentName: string;
-        className: string;
-        courseName: string;
-        imageUrl: string | null;
-    } | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isEnhancedMode, setIsEnhancedMode] = useState(false);
+// Fetch report data for metadata using Firestore REST API
+// This avoids using the Firebase Client SDK in a Server Component
+async function getReport(id: string) {
+    if (!id) return null;
 
-    useEffect(() => {
-        const fetchReport = async () => {
-            try {
-                const docRef = doc(db, 'reports', params.id);
-                const docSnap = await getDoc(docRef);
+    try {
+        const projectId = 'wp-classin-report'; // Hardcoded for server-side stability
+        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/reports/${id}`;
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    setReportData(data.reportData as ReportData);
-                    setMetaData({
-                        studentName: data.studentName,
-                        className: data.className,
-                        courseName: data.courseName,
-                        imageUrl: data.imageUrl || null
-                    });
-                } else {
-                    setError('리포트를 찾을 수 없습니다.');
-                }
-            } catch (err) {
-                console.error(err);
-                setError('리포트를 불러오는 중 오류가 발생했습니다.');
-            } finally {
-                setLoading(false);
-            }
-        };
+        const res = await fetch(url, { next: { revalidate: 60 } }); // Cache for 1 min
 
-        if (params.id) {
-            fetchReport();
+        if (!res.ok) {
+            console.error('Failed to fetch report metadata:', res.statusText);
+            return null;
         }
-    }, [params.id]);
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-[#F5F5F0] flex items-center justify-center">
-                <div className="text-center text-slate-400">
-                    <Icon name="Loader2" size={32} className="animate-spin mb-2 mx-auto" />
-                    <p>리포트를 불러오는 중...</p>
-                </div>
-            </div>
-        );
+        const data = await res.json();
+        // Parse Firestore REST format
+        const fields = data.fields;
+
+        return {
+            studentName: fields?.studentName?.stringValue || '학생',
+            // Add other fields if needed for description
+        };
+    } catch (error) {
+        console.error('Error fetching report for metadata:', error);
+        return null;
+    }
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+    const report = await getReport(params.id);
+
+    if (!report) {
+        return {
+            title: '학습 리포트 | 과사람 의대관',
+        };
     }
 
-    if (error || !reportData || !metaData) {
-        return (
-            <div className="min-h-screen bg-[#F5F5F0] flex items-center justify-center">
-                <div className="text-center text-slate-500">
-                    <Icon name="AlertCircle" size={48} className="mx-auto text-amber-500 mb-4" />
-                    <p className="text-lg font-bold text-slate-800">{error || '유효하지 않은 리포트입니다.'}</p>
-                    <p className="text-sm mt-2">존재하지 않거나 삭제된 리포트일 수 있습니다.</p>
-                </div>
-            </div>
-        );
-    }
+    return {
+        title: `${report.studentName} - 학습 리포트 | 과사람 의대관`,
+        description: '과사람 의대관 Premium Math Report',
+    };
+}
 
-    return (
-        <div className="min-h-screen bg-[#F5F5F0] py-8 px-4 font-sans print:bg-white print:p-0">
-            <ReportView
-                studentName={metaData.studentName}
-                className={metaData.className}
-                courseName={metaData.courseName}
-                reportData={reportData}
-                imagePreview={metaData.imageUrl}
-                isEnhancedMode={isEnhancedMode}
-                setIsEnhancedMode={setIsEnhancedMode}
-                reportId={params.id}
-            // No onReset here as this is a read-only view
-            />
-        </div>
-    );
+export default function ReportPage({ params }: Props) {
+    return <ReportClient id={params.id} />;
 }

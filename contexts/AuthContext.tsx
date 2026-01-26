@@ -11,7 +11,7 @@ interface UserData {
     displayName: string | null;
     centerName?: string;
     department?: string; // e.g. 의대관, 특목관
-    role?: 'admin' | 'teacher';
+    role?: 'super_admin' | 'center_admin' | 'dept_admin' | 'teacher' | 'admin'; // 'admin' is legacy super_admin
 }
 
 interface AuthContextType {
@@ -40,14 +40,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 // Fetch user specific data (centerName, role) from Firestore
                 try {
                     const userDoc = await getDoc(doc(db, 'teachers', user.uid));
-                    if (userDoc.exists()) {
-                        setUserData({ uid: user.uid, ...userDoc.data() } as UserData);
+                    let data = userDoc.exists() ? userDoc.data() as UserData : null;
+
+                    // Check Legacy Admin List & Auto-Update
+                    const { ALLOWED_ADMINS } = await import('@/lib/admins');
+                    const isLegacyAdmin = user.email && ALLOWED_ADMINS.map(e => e.toLowerCase()).includes(user.email.toLowerCase());
+
+                    if (isLegacyAdmin) {
+                        if (!data) {
+                            // Create doc if missing
+                            data = {
+                                uid: user.uid,
+                                email: user.email,
+                                displayName: user.displayName,
+                                role: 'admin'
+                            };
+                            const { setDoc } = await import('firebase/firestore');
+                            await setDoc(doc(db, 'teachers', user.uid), data, { merge: true });
+                        } else if (data.role !== 'admin') {
+                            // Upgrade role if needed
+                            data.role = 'admin';
+                            const { updateDoc } = await import('firebase/firestore');
+                            await updateDoc(doc(db, 'teachers', user.uid), { role: 'admin' });
+                        }
+                    }
+
+                    if (data) {
+                        setUserData({ ...data, uid: user.uid } as UserData);
                     } else {
-                        // Fallback if no firestore doc yet (e.g. just created)
+                        // Fallback
                         setUserData({
                             uid: user.uid,
                             email: user.email,
-                            displayName: user.displayName
+                            displayName: user.displayName,
+                            role: isLegacyAdmin ? 'admin' : 'teacher' // Default
                         });
                     }
                 } catch (error) {

@@ -43,6 +43,8 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     // Derived Data
     const [centers, setCenters] = useState<string[]>([]);
     const [departments, setDepartments] = useState<string[]>([]);
+    const [fetchedCenters, setFetchedCenters] = useState<string[]>([]); // Centers from teachers DB
+    const [fetchedDepartments, setFetchedDepartments] = useState<string[]>([]); // Departments from teachers DB
 
     // Admin Settings Modal
     const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -60,6 +62,30 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
             }
         }
     }, [user, loading, userData, router]);
+
+    // Fetch all centers for Admin
+    useEffect(() => {
+        if (viewMode === 'admin' && user) {
+            const fetchAllCenters = async () => {
+                try {
+                    const q = query(collection(db, 'teachers'));
+                    const snapshot = await getDocs(q);
+                    const centerSet = new Set<string>();
+                    const deptSet = new Set<string>();
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data.centerName) centerSet.add(data.centerName);
+                        if (data.department) deptSet.add(data.department);
+                    });
+                    setFetchedCenters(Array.from(centerSet));
+                    setFetchedDepartments(Array.from(deptSet));
+                } catch (e) {
+                    console.error("Error fetching all centers:", e);
+                }
+            };
+            fetchAllCenters();
+        }
+    }, [viewMode, user]);
 
     useEffect(() => {
         if (viewMode === 'teacher') {
@@ -120,7 +146,10 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                 });
 
                 setReports(docs);
+
+                setReports(docs);
                 setCenters(Array.from(uniqueCenters).sort());
+                setDepartments(Array.from(uniqueDepartments).sort());
                 setDepartments(Array.from(uniqueDepartments).sort());
 
                 // Set initial center filter based on role/mode
@@ -157,14 +186,26 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         };
 
         fetchReports();
-    }, [user, monthFilter, userData, viewMode, selectedCenter]);
+    }, [user, monthFilter, userData, viewMode]);
 
-    const getGradeFromClassName = (className: string) => {
-        if (!className) return '기타';
-        const match = className.match(/(초|중|고)(\d)/);
-        if (match) {
-            return `${match[1]}${match[2]}`;
-        }
+    const getGradeFromReport = (className: string, courseName: string) => {
+        const text = (className || '') + ' ' + (courseName || '');
+
+        // 1. Try English prefixes with digits (M1, H2, etc.)
+        const mMatch = text.match(/M(\d)/i);
+        if (mMatch) return `중${mMatch[1]}`;
+
+        const hMatch = text.match(/H(\d)/i);
+        if (hMatch) return `고${hMatch[1]}`;
+
+        // 2. Try Korean patterns (초1, 중2, 고3)
+        const koMatch = text.match(/(초|중|고)(\d)/);
+        if (koMatch) return `${koMatch[1]}${koMatch[2]}`;
+
+        // 3. General fallbacks for H/M
+        if (/H/i.test(text)) return '고등';
+        if (/M/i.test(text)) return '중등';
+
         return '기타';
     };
 
@@ -188,8 +229,10 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
             const matchCourse = report.courseName?.toLowerCase().includes(lowerTerm);
             const matchTopic = report.reportData?.report_info?.topic?.toLowerCase().includes(lowerTerm);
             const matchTeacher = report.teacherName?.toLowerCase().includes(lowerTerm);
+            const matchCenter = report.centerName?.toLowerCase().includes(lowerTerm);
+            const matchDept = report.department?.toLowerCase().includes(lowerTerm);
 
-            if (!matchName && !matchClass && !matchCourse && !matchTopic && !matchTeacher) return false;
+            if (!matchName && !matchClass && !matchCourse && !matchTopic && !matchTeacher && !matchCenter && !matchDept) return false;
         }
 
         // 4. My Reports Filter
@@ -202,10 +245,10 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     });
 
     const groupedReports: Record<string, ReportDoc[]> = {};
-    const gradeOrder = ['초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '기타'];
+    const gradeOrder = ['초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '중등', '고등', '기타'];
 
     filteredReports.forEach(report => {
-        const grade = getGradeFromClassName(report.className);
+        const grade = getGradeFromReport(report.className, report.courseName);
         if (!groupedReports[grade]) groupedReports[grade] = [];
         groupedReports[grade].push(report);
     });
@@ -404,7 +447,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                         className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'center_admin' || userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
                                     >
                                         <option value="All">All Centers</option>
-                                        {centers.map(c => <option key={c} value={c}>{c}</option>)}
+                                        {Array.from(new Set([...centers, ...fetchedCenters])).sort().map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                     <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                                 </div>
@@ -418,7 +461,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                     className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
                                 >
                                     <option value="All">All Departments</option>
-                                    {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                                    {Array.from(new Set([...departments, ...fetchedDepartments])).sort().map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
                                 <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                             </div>

@@ -215,8 +215,28 @@ export default function ReportGenerator() {
 
                     // Extract Grade from ClassName (e.g., "중3A" -> "중3", "고1" -> "고1")
                     // If no match, use '기타학년'
-                    const gradeMatch = className.match(/(초|중|고)\s*\d+/);
-                    const grade = gradeMatch ? sanitize(gradeMatch[0]) : '기타학년';
+                    // Extract Grade from ClassName or CourseName
+                    const gradeRegex = /(초|중|고)\s*\d+/;
+                    let gradeMatch = className.match(gradeRegex);
+                    if (!gradeMatch && courseName) {
+                        gradeMatch = courseName.match(gradeRegex);
+                    }
+
+                    let grade = '기타학년';
+
+                    if (gradeMatch) {
+                        grade = sanitize(gradeMatch[0]);
+                    } else {
+                        // Check for Middle/High school indicators (M/H)
+                        const upperClass = className.toUpperCase();
+                        const upperCourse = courseName.toUpperCase();
+
+                        if (upperClass.includes('M') || upperCourse.includes('M')) {
+                            grade = '중등';
+                        } else if (upperClass.includes('H') || upperCourse.includes('H')) {
+                            grade = '고등';
+                        }
+                    }
                     const student = sanitize(studentName);
 
                     const fileName = `reports/${center}/${dept}/${grade}/${student}/${Date.now()}_${student}.html`;

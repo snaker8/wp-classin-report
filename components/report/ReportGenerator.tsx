@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { db, storage } from '@/lib/firebase';
@@ -8,6 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
+import CameraCapture from '@/components/ui/CameraCapture';
 
 interface Attachment {
     id: string;
@@ -29,6 +30,11 @@ export default function ReportGenerator() {
 
     // File States
     const [attachments, setAttachments] = useState<Attachment[]>([]);
+    const [isCameraOpen, setIsCameraOpen] = useState(false);
+
+    // Refs for split inputs
+    const imageInputRef = useRef<HTMLInputElement>(null);
+    const pdfInputRef = useRef<HTMLInputElement>(null);
 
     // Process States
     const [isLoading, setIsLoading] = useState(false);
@@ -54,33 +60,40 @@ export default function ReportGenerator() {
 
     const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            const newFiles = Array.from(e.target.files);
-            const newAttachments: Attachment[] = [];
-
-            for (const file of newFiles) {
-                const id = Math.random().toString(36).substring(7);
-                const isPdf = file.type === 'application/pdf';
-
-                // Read preview
-                const preview = await new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(file);
-                });
-
-                newAttachments.push({
-                    id,
-                    file,
-                    type: isPdf ? 'pdf' : 'image',
-                    preview,
-                    objectUrl: isPdf ? undefined : URL.createObjectURL(file),
-                    optimized: undefined
-                });
-            }
-
-            setAttachments(prev => [...prev, ...newAttachments]);
-            setReportData(null);
+            await processFiles(Array.from(e.target.files));
         }
+    };
+
+    const processFiles = async (newFiles: File[]) => {
+        const newAttachments: Attachment[] = [];
+
+        for (const file of newFiles) {
+            const id = Math.random().toString(36).substring(7);
+            const isPdf = file.type === 'application/pdf';
+
+            // Read preview
+            const preview = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(file);
+            });
+
+            newAttachments.push({
+                id,
+                file,
+                type: isPdf ? 'pdf' : 'image',
+                preview,
+                objectUrl: isPdf ? undefined : URL.createObjectURL(file),
+                optimized: undefined
+            });
+        }
+
+        setAttachments(prev => [...prev, ...newAttachments]);
+        setReportData(null);
+    };
+
+    const handleCameraCapture = async (file: File) => {
+        await processFiles([file]);
     };
 
     const removeAttachment = (id: string) => {
@@ -94,9 +107,9 @@ export default function ReportGenerator() {
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
-                    // Increased from 1200 to 4096 to support long vertical images (pan-seo)
-                    // Gemini 1.5 Flash supports fairly high res input
-                    const MAX_DIMENSION = 4096;
+                    // Reduced from 4096 to 3072 to ensure payload fits within server limits
+                    // Gemini 1.5 Flash supports high res, but we need to stay under the body size limit
+                    const MAX_DIMENSION = 3072;
                     let width = img.width;
                     let height = img.height;
 
@@ -122,7 +135,7 @@ export default function ReportGenerator() {
                     canvas.toBlob(
                         (blob) => resolve(blob || file),
                         'image/jpeg',
-                        0.85
+                        0.8
                     );
                 };
                 img.src = e.target?.result as string;
@@ -249,6 +262,9 @@ export default function ReportGenerator() {
                     const htmlUrl = await getDownloadURL(storageRef);
                     console.log("HTML Report uploaded:", htmlUrl);
 
+                    const rawCenterName = userData?.centerName || 'Unknown';
+                    const centerName = rawCenterName === '동래센터' ? '동래' : rawCenterName;
+
                     const docRef = await addDoc(collection(db, 'reports'), {
                         studentName,
                         className,
@@ -258,7 +274,7 @@ export default function ReportGenerator() {
                         imageUrl: '',
                         teacherId: user.uid,
                         teacherName: teacherName || userData?.displayName || user.displayName || 'Unknown',
-                        centerName: userData?.centerName || 'Unknown',
+                        centerName: centerName,
                         department: userData?.department || 'Unknown',
                         createdAt: serverTimestamp(),
                         month: new Date().toISOString().slice(0, 7)
@@ -317,84 +333,127 @@ export default function ReportGenerator() {
     }
 
     return (
-        <div className="max-w-xl mx-auto space-y-6 md:space-y-8 animate-fade-in relative z-10">
-            <div className="text-center space-y-3">
-                <h2 className="text-2xl md:text-3xl font-serif font-bold text-slate-900">Start Analysis</h2>
-                <p className="text-slate-500 font-light text-sm md:text-base">
-                    <span className="font-bold text-slate-700">과사람 의대관</span>의 전문적인 분석 시스템입니다.<br />
-                    학생의 판서 이미지 또는 PDF 자료를 업로드해 주세요.
-                </p>
-            </div>
+        <div className="max-w-[480px] w-full mx-auto space-y-6 md:space-y-8 animate-fade-in relative z-10 py-8">
+            <div className="bg-[#f0ece5]/30 backdrop-blur-2xl p-10 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-white/60 relative overflow-hidden">
+                <div className="text-center space-y-3 mb-12">
+                    <h2 className="text-[28px] font-serif font-light tracking-widest text-[#2a2a2a]">START ANALYSIS</h2>
+                    <p className="text-[#3a3a3a]/70 font-light text-[11.5px] tracking-wide leading-relaxed">
+                        <span className="font-medium text-[#2a2a2a]">과사람 동래센터</span>의 전문적인 분석 시스템입니다.<br />
+                        학생의 판서 이미지 또는 PDF 자료를 업로드해 주세요.
+                    </p>
+                </div>
 
-            <div className="bg-white p-6 md:p-8 rounded-xl shadow-xl border border-slate-100 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-900 via-amber-500 to-slate-900"></div>
-
-                <div className="space-y-6">
+                <div className="space-y-8">
                     {/* Inputs */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2 col-span-1 md:col-span-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Teacher Name (작성자)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-7">
+                        <div className="space-y-2 col-span-1 md:col-span-2 relative group">
                             <input
                                 type="text"
                                 value={teacherName}
                                 onChange={(e) => setTeacherName(e.target.value)}
-                                placeholder="작성자 이름"
-                                className="w-full px-4 py-2 bg-slate-50 border-b-2 border-slate-200 focus:border-amber-600 outline-none"
+                                placeholder="Teacher Name (작성자)"
+                                className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
                             />
                         </div>
 
-                        <div className="space-y-2 col-span-1 md:col-span-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name <span className="text-red-500">*</span></label>
+                        <div className="space-y-2 col-span-1 md:col-span-2 relative group">
                             <input
                                 type="text"
                                 value={studentName}
                                 onChange={(e) => setStudentName(e.target.value)}
-                                placeholder="이름 (예: 김철수)"
-                                className="w-full px-4 py-3 bg-slate-50 border-b-2 border-slate-200 focus:border-amber-600 outline-none text-lg font-serif"
+                                placeholder="Student Name (이름) *"
+                                className="w-full pb-3 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-serif focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-lg"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Class Name</label>
+                        <div className="space-y-2 relative group">
                             <input
                                 type="text"
                                 value={className}
                                 onChange={(e) => setClassName(e.target.value)}
-                                placeholder="클래스명"
-                                className="w-full px-4 py-2 bg-slate-50 border-b-2 border-slate-200 focus:border-amber-600 outline-none"
+                                placeholder="Class Name (클래스명)"
+                                className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Course / Subject</label>
+                        <div className="space-y-2 relative group">
                             <input
                                 type="text"
                                 value={courseName}
                                 onChange={(e) => setCourseName(e.target.value)}
-                                placeholder="과정명"
-                                className="w-full px-4 py-2 bg-slate-50 border-b-2 border-slate-200 focus:border-amber-600 outline-none"
+                                placeholder="Course / Subject (과정명)"
+                                className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
                             />
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Board Images & PDF <span className="text-red-500">*</span></label>
-                        <div className={`group relative border-2 border-dashed border-slate-200 rounded-lg p-6 md:p-8 transition-all text-center cursor-pointer hover:border-amber-400 bg-slate-50/50 hover:bg-white`}>
-                            <input
-                                type="file"
-                                accept="image/*,application/pdf"
-                                multiple
-                                onChange={handleFilesChange}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                            />
-                            <div className="space-y-4 pointer-events-none">
-                                <div className="w-14 h-14 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
-                                    <Icon name="Upload" size={24} />
+                    <div className="space-y-4 pt-4">
+                        <label className="block text-[10px] font-medium text-[#2a2a2a]/50 uppercase tracking-[0.2em]">Board Images & PDF <span className="text-red-400 font-normal">*</span></label>
+                        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4`}>
+                            {/* PDF Upload Button */}
+                            <div
+                                onClick={() => pdfInputRef.current?.click()}
+                                className="border border-foreground/10 bg-white/30 backdrop-blur-sm rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 hover:border-foreground/20 transition-all text-center gap-3 aspect-[3/2] shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
+                            >
+                                <div className="w-12 h-12 bg-white/60 border border-white text-foreground/60 rounded-xl flex items-center justify-center shadow-sm">
+                                    <Icon name="FileText" size={20} />
                                 </div>
-                                <div className="text-slate-500">
-                                    <p className="font-bold text-slate-700">Click to upload files</p>
-                                    <p className="text-xs mt-1">Images (JPG, PNG) or PDF</p>
+                                <div>
+                                    <p className="font-medium text-[13px] text-foreground/80 tracking-wide">Add PDF</p>
+                                    <p className="text-[10px] text-foreground/40 mt-1 uppercase tracking-widest">Upload Documents</p>
+                                </div>
+                                <input
+                                    ref={pdfInputRef}
+                                    type="file"
+                                    accept="application/pdf"
+                                    multiple
+                                    onChange={handleFilesChange}
+                                    className="hidden"
+                                />
+                            </div>
+
+                            {/* Camera Button - Continuous Shot */}
+                            <div
+                                onClick={() => setIsCameraOpen(true)}
+                                className="border border-foreground/10 bg-white/30 backdrop-blur-sm rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 hover:border-foreground/20 transition-all text-center gap-3 aspect-[3/2] shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
+                            >
+                                <div className="w-12 h-12 bg-white/60 border border-white text-foreground/60 rounded-xl flex items-center justify-center shadow-sm">
+                                    <Icon name="Camera" size={20} />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-[13px] text-foreground/80 tracking-wide">Take Photos</p>
+                                    <p className="text-[10px] text-foreground/40 mt-1 uppercase tracking-widest">Continuous Shot</p>
                                 </div>
                             </div>
+
+                            {/* Image Upload Button */}
+                            <div
+                                onClick={() => imageInputRef.current?.click()}
+                                className="border border-foreground/10 bg-white/30 backdrop-blur-sm rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-white/50 hover:border-foreground/20 transition-all text-center gap-3 aspect-[3/2] md:col-span-2 shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
+                            >
+                                <div className="w-12 h-12 bg-white/60 border border-white text-foreground/60 rounded-xl flex items-center justify-center shadow-sm">
+                                    <Icon name="Image" size={20} />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-[13px] text-foreground/80 tracking-wide">Add Photos</p>
+                                    <p className="text-[10px] text-foreground/40 mt-1 uppercase tracking-widest">Select from Gallery</p>
+                                </div>
+                                <input
+                                    ref={imageInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleFilesChange}
+                                    className="hidden"
+                                />
+                            </div>
                         </div>
+
+                        {/* Camera Modal */}
+                        {isCameraOpen && (
+                            <CameraCapture
+                                onCapture={handleCameraCapture}
+                                onClose={() => setIsCameraOpen(false)}
+                            />
+                        )}
 
                         {/* File Previews */}
                         {attachments.length > 0 && (
@@ -432,26 +491,27 @@ export default function ReportGenerator() {
                         </div>
                     )}
 
-                    <button
-                        onClick={handleGenerateReport}
-                        disabled={isLoading || !studentName || attachments.length === 0}
-                        className={`w-full py-4 rounded-lg font-bold text-sm tracking-widest uppercase transition-all shadow-md flex items-center justify-center gap-3 ${isLoading || !studentName || attachments.length === 0
-                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            : 'bg-slate-900 text-amber-500 hover:bg-slate-800 hover:shadow-lg'
-                            }`}
-                    >
-                        {isLoading ? (
-                            <>
-                                <Icon name="Loader2" size={18} className="animate-spin" />
-                                <span>Generating... {saving && "(Saving...)"}</span>
-                            </>
-                        ) : (
-                            <>
-                                <span>Generate Report</span>
-                                <Icon name="ChevronRight" size={16} />
-                            </>
-                        )}
-                    </button>
+                    <div className="pt-8">
+                        <button
+                            onClick={handleGenerateReport}
+                            disabled={isLoading || !studentName || attachments.length === 0}
+                            className={`w-full py-3.5 rounded-lg font-medium text-[13px] tracking-wide transition-all flex items-center justify-center gap-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_4px_rgba(0,0,0,0.05)] border ${isLoading || !studentName || attachments.length === 0
+                                ? 'bg-white/50 text-[#2a2a2a]/30 border-white/60 cursor-not-allowed'
+                                : 'bg-gradient-to-b from-[#e5e5e5] to-[#d4d4d4] hover:from-[#d4d4d4] hover:to-[#c4c4c4] text-[#2a2a2a]/80 border-white/40 active:scale-[0.98]'
+                                }`}
+                        >
+                            {isLoading ? (
+                                <>
+                                    <Icon name="Loader2" size={14} className="animate-spin" />
+                                    <span>Generating... {saving && "(Saving...)"}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span>GENERATE REPORT &gt;</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ReportGenerator from "@/components/report/ReportGenerator";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -41,34 +42,32 @@ export default function Home() {
   if (!user) return null; // Will redirect
 
   return (
-    <div className="min-h-screen bg-[#F5F5F0] text-slate-800 font-sans selection:bg-amber-100">
-      {/* Header */}
-      <header className="bg-slate-900 text-white shadow-md sticky top-0 z-20 print:hidden">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-amber-100/50">
+      {/* Header - Navy Blue Luxury */}
+      <header className="sticky top-0 z-20 print:hidden bg-[#0A1128] text-white">
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-sm flex items-center justify-center shadow-lg">
-              <Icon name="GraduationCap" className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-serif font-bold tracking-wide text-amber-50 leading-tight">
-                {userData?.centerName || '과사람 의대관'}
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col">
+              <h1 className="text-lg font-serif tracking-[0.1em] leading-tight uppercase text-white/90">
+                {userData?.centerName || '동래'} MATHEMATICS EDUCATION
               </h1>
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest hidden sm:block">
-                {userData?.centerName ? `${userData.centerName} Mathematics Education` : 'Premium Mathematics Education'}
-              </p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-xs tracking-wide text-slate-300">
-            <a href={userData?.role === 'teacher' ? "/teacher" : "/admin"} className="hover:text-amber-500 transition-colors">
-              {userData?.role === 'teacher' ? '내 리포트 관리' : '관리자'}
-            </a>
+          <div className="flex items-center gap-6 text-[11px] uppercase tracking-[0.1em] text-white/80 font-medium">
+            {userData?.role === 'admin' ? (
+              <Link href="/admin" className="hover:text-white transition-colors opacity-70 hover:opacity-100 tracking-widest">
+                ADMIN
+              </Link>
+            ) : (
+              <span className="opacity-70 tracking-widest">TEACHER</span>
+            )}
+            <span className="text-white/20">|</span>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1 hover:text-red-400 transition-colors pl-2 border-l border-slate-700"
+              className="hover:text-white transition-colors opacity-70 hover:opacity-100"
               title="로그아웃"
             >
-              <Icon name="LogOut" size={14} />
-              <span className="hidden sm:inline">Logout</span>
+              Logout
             </button>
           </div>
         </div>

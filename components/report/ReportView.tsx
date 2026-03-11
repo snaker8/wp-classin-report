@@ -93,62 +93,62 @@ export const ReportView = ({
         @media print { .no-print { display: none !important; } }
     </style>
 </head>
-<body class="bg-white text-slate-800 p-8 md:p-16 max-w-4xl mx-auto">
+<body class="bg-[#F4F3F0] text-[#2C2C2A] p-8 md:p-16 max-w-4xl mx-auto">
     <!-- Content similar to the preview -->
-    <div class="border-b-2 border-slate-900 pb-6 mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4">
+    <div class="border-b border-[#2C2C2A]/20 pb-6 mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
-             <div class="flex flex-wrap gap-2 mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase">
-                ${className ? `<span class="bg-slate-100 px-2 py-1 rounded">${className}</span>` : ''}
-                ${courseName ? `<span class="bg-amber-50 text-amber-700 px-2 py-1 rounded">${courseName}</span>` : ''}
+             <div class="flex flex-wrap gap-2 mb-2 text-xs font-bold tracking-wider text-[#A68B5C] uppercase">
+                ${className ? `<span class="bg-[#2C2C2A]/5 border border-[#2C2C2A]/10 px-2 py-1 rounded">${className}</span>` : ''}
+                ${courseName ? `<span class="bg-[#A68B5C]/10 text-[#A68B5C] px-2 py-1 rounded">${courseName}</span>` : ''}
             </div>
-            <h2 class="text-3xl md:text-4xl font-serif font-bold text-slate-900 mb-1">${studentName}</h2>
-            <p class="text-slate-500 font-medium tracking-wide uppercase text-xs">${reportData.report_info?.sub_title || ''}</p>
+            <h2 class="text-3xl md:text-4xl font-serif font-light tracking-wide text-[#2C2C2A] mb-1">${studentName}</h2>
+            <p class="text-[#2C2C2A]/60 font-medium tracking-wide uppercase text-xs">${reportData.report_info?.sub_title || ''}</p>
         </div>
         <div class="text-left md:text-right">
              <div class="flex items-center gap-2 mb-1 justify-start md:justify-end">
-                <div class="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
-                <span class="text-xs font-bold text-slate-900 uppercase tracking-widest">과사람 의대관</span>
+                <div class="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></div>
+                <span class="text-xs font-bold text-[#2C2C2A] uppercase tracking-widest">과사람 의대관</span>
             </div>
-            <div class="text-amber-600 font-serif italic text-lg">${reportData.report_info?.topic || ''}</div>
+            <div class="text-[#A68B5C] font-serif italic text-lg">${reportData.report_info?.topic || ''}</div>
         </div>
     </div>
 
     <div class="grid gap-10 mb-10">
         <section>
-            <h3 class="text-lg font-serif font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Learning Progress
+            <h3 class="text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-4 flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Learning Progress
             </h3>
-            <p class="text-slate-700 leading-relaxed text-justify">${reportData.analysis_data?.learning_progress || ''}</p>
+            <p class="text-[#2C2C2A]/80 leading-relaxed font-light text-justify">${reportData.analysis_data?.learning_progress || ''}</p>
         </section>
         <section>
-            <h3 class="text-lg font-serif font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Key Strengths
+            <h3 class="text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-4 flex items-center gap-2">
+                <span class="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Key Strengths
             </h3>
             <div class="grid md:grid-cols-2 gap-4">
                 ${(reportData.analysis_data?.growth_points || []).map(point => `
-                    <div class="bg-gray-50 p-5 rounded-lg border-l-4 border-slate-900">
-                        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Evidence</div>
-                        <p class="text-slate-600 mb-3 font-mono text-xs break-keep">${point.evidence || ''}</p>
-                        <div class="text-sm text-slate-900 font-bold font-serif break-keep">"${point.praise_comment || ''}"</div>
+                    <div class="bg-white/40 border border-[#2C2C2A]/10 backdrop-blur-sm p-5 rounded-lg shadow-sm">
+                        <div class="text-xs font-bold text-[#A68B5C] uppercase tracking-wider mb-2">Evidence</div>
+                        <p class="text-[#2C2C2A]/70 mb-3 font-mono text-xs break-keep">${point.evidence || ''}</p>
+                        <div class="text-sm text-[#2C2C2A] font-light font-serif break-keep">"${point.praise_comment || ''}"</div>
                     </div>
                 `).join('')}
             </div>
         </section>
-        <section class="bg-amber-50 p-6 rounded-lg border border-amber-100">
-            <h3 class="text-lg font-serif font-bold text-slate-900 mb-3 flex items-center gap-2">Professional Advice</h3>
-            <p class="text-slate-800 leading-relaxed text-sm font-medium">${reportData.analysis_data?.improvement_suggestions || ''}</p>
+        <section class="bg-[#A68B5C]/5 p-6 rounded-lg border border-[#A68B5C]/20 backdrop-blur-sm shadow-sm">
+            <h3 class="text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-3 flex items-center gap-2">Professional Advice</h3>
+            <p class="text-[#2C2C2A]/90 leading-relaxed font-light text-sm font-medium">${reportData.analysis_data?.improvement_suggestions || ''}</p>
         </section>
     </div>
 
-    <div class="pt-8 border-t border-slate-200 mb-10">
-        <h4 class="text-base font-serif font-bold text-slate-900 mb-2">Message for Parents</h4>
-        <p class="text-slate-600 text-sm mb-4 italic">"${reportData.parent_guide?.opening_ment || ''}"</p>
-        <div class="bg-slate-50 p-4 rounded-lg inline-block w-full">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Home Coaching Tips</span>
+    <div class="pt-8 border-t border-[#2C2C2A]/10 mb-10">
+        <h4 class="text-base font-serif font-light tracking-wide text-[#2C2C2A] mb-2">Message for Parents</h4>
+        <p class="text-[#2C2C2A]/70 text-sm mb-4 italic">"${reportData.parent_guide?.opening_ment || ''}"</p>
+        <div class="bg-white/40 border border-[#2C2C2A]/5 backdrop-blur-sm p-4 rounded-lg inline-block w-full">
+            <span class="text-xs font-bold text-[#A68B5C] uppercase tracking-wider block mb-2">Home Coaching Tips</span>
             <ul class="space-y-2">
                 ${(reportData.parent_guide?.encouragement_tips || []).map(tip => `
-                    <li class="text-sm text-slate-700 flex items-start gap-2">
-                        <span class="w-1 h-1 bg-slate-400 rounded-full mt-2 flex-shrink-0"></span>
+                    <li class="text-sm text-[#2C2C2A]/80 flex items-start gap-2">
+                        <span class="w-1 h-1 bg-[#A68B5C] rounded-full mt-2 flex-shrink-0"></span>
                         <span class="break-keep">${tip}</span>
                     </li>
                 `).join('')}
@@ -157,12 +157,12 @@ export const ReportView = ({
     </div>
 
     <!-- Board Analytics Section -->
-    <section class="mt-12 pt-8 border-t border-slate-200 mb-12">
+    <section class="mt-12 pt-8 border-t border-[#2C2C2A]/10 mb-12">
         <h3 class="text-lg font-serif font-bold text-slate-900 flex items-center gap-2 mb-4">
-            <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Board Analytics
+            <span class="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Board Analytics
         </h3>
-        <div class="bg-slate-50 p-2 rounded-xl border border-slate-100">
-            <div class="rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm space-y-4 p-4">
+        <div class="bg-white/30 border border-[#2C2C2A]/10 backdrop-blur-sm p-2 rounded-xl">
+            <div class="rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm space-y-4 p-4">
                 ${base64Images.map(img => `
                     <div style="margin-bottom: 20px;">
                         <img src="${img}" alt="Board" style="width: 100%; height: auto; display: block; border-radius: 8px;" />
@@ -173,7 +173,7 @@ export const ReportView = ({
     </section>
 
     <div class="mt-12 text-center border-t border-slate-100 pt-6">
-        <p class="text-xs text-slate-400 tracking-widest uppercase">과사람 의대관 | Premium Mathematics Education</p>
+        <p class="text-xs text-[#A68B5C] tracking-widest uppercase">과사람 의대관 | Premium Mathematics Education</p>
     </div>
 </body>
 </html>`;
@@ -195,7 +195,7 @@ export const ReportView = ({
                 <div className="flex justify-between items-center mb-6 print:hidden gap-2">
                     <div className="flex gap-2">
                         {onReset && (
-                            <button onClick={onReset} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors px-4 py-2 rounded-full hover:bg-white text-xs md:text-sm font-medium border border-transparent hover:border-slate-200">
+                            <button onClick={onReset} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors px-4 py-2 rounded-full hover:bg-white text-xs md:text-sm font-medium border border-transparent hover:border-[#2C2C2A]/10">
                                 <Icon name="RefreshCw" size={14} />
                                 <span className="hidden sm:inline">다시 분석하기</span>
                                 <span className="sm:hidden">Reset</span>
@@ -204,13 +204,13 @@ export const ReportView = ({
                     </div>
                     <div className="flex gap-2 items-center">
                         {saving && (
-                            <div className="flex items-center gap-2 text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full text-xs font-medium animate-pulse">
+                            <div className="flex items-center gap-2 text-slate-500 bg-[#A68B5C]/10 px-3 py-1.5 rounded-full text-xs font-medium animate-pulse">
                                 <Icon name="Loader2" size={12} className="animate-spin" />
                                 <span>자동 저장 중...</span>
                             </div>
                         )}
                         {saveError && !reportId && (
-                            <div className="flex items-center gap-2 text-red-500 bg-red-50 px-3 py-1.5 rounded-full text-xs font-medium border border-red-100">
+                            <div className="flex items-center gap-2 text-[#A68B5C] bg-[#A68B5C]/10 px-3 py-1.5 rounded-full text-xs font-medium border border-[#A68B5C]/20">
                                 <Icon name="AlertCircle" size={12} />
                                 <span>{saveError}</span>
                             </div>
@@ -219,19 +219,19 @@ export const ReportView = ({
                             <button
                                 onClick={handleCopyLink}
                                 className={`flex items-center gap-2 px-5 py-2 rounded-full text-xs md:text-sm font-medium shadow-md transition-all ${copied
-                                    ? 'bg-green-600 text-white hover:bg-green-700'
-                                    : 'bg-slate-900 text-amber-500 hover:bg-slate-800'
+                                    ? 'bg-[#A68B5C] text-[#F4F3F0] hover:bg-[#A68B5C]/90'
+                                    : 'bg-white/70 text-[#2C2C2A] border border-[#2C2C2A]/10 hover:bg-white backdrop-blur-sm'
                                     }`}
                             >
                                 <Icon name={copied ? "Check" : "Link"} size={14} />
                                 {copied ? "복사됨" : "학부모 전송 링크"}
                             </button>
                         )}
-                        <button onClick={downloadHtmlReport} className="flex items-center gap-2 bg-amber-600 text-white px-5 py-2 rounded-full text-xs md:text-sm font-medium hover:bg-amber-700 shadow-md transition-all">
+                        <button onClick={downloadHtmlReport} className="flex items-center gap-2 bg-white/70 text-[#2C2C2A] border border-[#2C2C2A]/10 px-5 py-2 rounded-full text-xs md:text-sm font-medium hover:bg-white shadow-sm transition-all backdrop-blur-sm transition-all">
                             <Icon name="Download" size={14} />
                             HTML 저장
                         </button>
-                        <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-full text-xs md:text-sm font-medium hover:bg-slate-800 shadow-md transition-all">
+                        <button onClick={() => window.print()} className="flex items-center gap-2 bg-[#2C2C2A] text-[#F4F3F0] border border-[#2C2C2A]/10 px-5 py-2 rounded-full text-xs md:text-sm font-medium hover:bg-[#2C2C2A]/90 shadow-md transition-all">
                             <Icon name="Printer" size={14} />
                             PDF / Print
                         </button>
@@ -239,54 +239,54 @@ export const ReportView = ({
                 </div>
             )}
 
-            <div className="bg-white w-full max-w-4xl mx-auto min-h-screen md:min-h-[297mm] shadow-2xl overflow-hidden relative print:shadow-none print:w-full print:max-w-none">
-                <div className="absolute top-0 left-0 w-1 md:w-2 h-full bg-amber-500/10 hidden sm:block"></div>
+            <div className="bg-[#F4F3F0] text-[#2C2C2A] w-full max-w-4xl mx-auto min-h-screen md:min-h-[297mm] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative print:shadow-none print:w-full print:max-w-none print:bg-white">
+                <div className="absolute top-0 left-0 w-1 md:w-2 h-full bg-[#A68B5C]/10 hidden sm:block"></div>
 
                 <div className="p-5 sm:p-12 md:p-16">
                     {/* Header */}
-                    <div className="border-b-2 border-slate-900 pb-6 mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4">
+                    <div className="border-b border-[#2C2C2A]/20 pb-6 mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4">
                         <div>
-                            <div className="flex flex-wrap gap-2 mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase">
-                                {className && <span className="bg-slate-100 px-2 py-1 rounded">{className}</span>}
-                                {courseName && <span className="bg-amber-50 text-amber-700 px-2 py-1 rounded">{courseName}</span>}
+                            <div className="flex flex-wrap gap-2 mb-2 text-xs font-bold tracking-wider text-[#A68B5C] uppercase">
+                                {className && <span className="bg-[#2C2C2A]/5 border border-[#2C2C2A]/10 px-2 py-1 rounded">{className}</span>}
+                                {courseName && <span className="bg-[#A68B5C]/10 text-[#A68B5C] px-2 py-1 rounded">{courseName}</span>}
                             </div>
-                            <h2 className="text-3xl md:text-4xl font-serif font-bold text-slate-900 mb-1">{studentName}</h2>
-                            <p className="text-slate-500 font-medium tracking-wide uppercase text-[10px] md:text-xs">
+                            <h2 className="text-3xl md:text-4xl font-serif font-light tracking-wide text-[#2C2C2A] mb-1">{studentName}</h2>
+                            <p className="text-[#2C2C2A]/60 font-medium tracking-wide uppercase text-[10px] md:text-xs">
                                 {reportData.report_info?.sub_title || ''}
                             </p>
                         </div>
                         <div className="text-left md:text-right">
                             <div className="flex items-center gap-2 mb-1 justify-start md:justify-end">
-                                <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
-                                <span className="text-[10px] md:text-xs font-bold text-slate-900 uppercase tracking-widest">과사람 의대관</span>
+                                <div className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></div>
+                                <span className="text-[10px] md:text-xs font-bold text-[#2C2C2A] uppercase tracking-widest">과사람 의대관</span>
                             </div>
-                            <div className="text-amber-600 font-serif italic text-base md:text-lg">{reportData.report_info?.topic || ''}</div>
+                            <div className="text-[#A68B5C] font-serif italic text-base md:text-lg">{reportData.report_info?.topic || ''}</div>
                         </div>
                     </div>
 
                     {/* Analysis Data */}
                     <div className="grid gap-8 md:gap-10">
                         <section>
-                            <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Learning Progress
+                            <h3 className="text-base md:text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-4 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Learning Progress
                             </h3>
-                            <div className="text-slate-700 leading-relaxed text-justify text-sm md:text-base">
+                            <div className="text-[#2C2C2A]/80 leading-relaxed font-light text-justify text-sm md:text-base">
                                 <MathText text={reportData.analysis_data?.learning_progress || ''} />
                             </div>
                         </section>
 
                         <section>
-                            <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Key Strengths
+                            <h3 className="text-base md:text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-4 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Key Strengths
                             </h3>
                             <div className="grid md:grid-cols-2 gap-4">
                                 {(reportData.analysis_data?.growth_points || []).map((point, idx) => (
-                                    <div key={idx} className="bg-[#F8F9FA] p-5 rounded-lg border-l-4 border-slate-900">
-                                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Evidence</div>
-                                        <div className="text-slate-600 mb-3 font-mono text-xs break-keep">
+                                    <div key={idx} className="bg-white/40 p-5 rounded-lg border border-[#2C2C2A]/10 backdrop-blur-sm shadow-sm transition-all hover:bg-white/60">
+                                        <div className="text-xs font-bold text-[#A68B5C] uppercase tracking-wider mb-2">Evidence</div>
+                                        <div className="text-[#2C2C2A]/70 mb-3 font-mono text-xs break-keep">
                                             <MathText text={point.evidence || ''} />
                                         </div>
-                                        <div className="text-sm text-slate-900 font-bold font-serif break-keep">
+                                        <div className="text-sm text-[#2C2C2A] font-light font-serif break-keep">
                                             &quot;<MathText text={point.praise_comment || ''} />&quot;
                                         </div>
                                     </div>
@@ -294,33 +294,33 @@ export const ReportView = ({
                             </div>
                         </section>
 
-                        <section className="bg-amber-50 p-6 rounded-lg border border-amber-100">
-                            <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 mb-3 flex items-center gap-2">
-                                <Icon name="Award" size={18} className="text-amber-600" /> Professional Advice
+                        <section className="bg-[#A68B5C]/5 p-6 rounded-lg border border-[#A68B5C]/20 backdrop-blur-sm shadow-sm">
+                            <h3 className="text-base md:text-lg font-serif font-light tracking-wide text-[#2C2C2A] mb-3 flex items-center gap-2">
+                                <Icon name="Award" size={18} className="text-[#A68B5C]" /> Professional Advice
                             </h3>
-                            <div className="text-slate-800 leading-relaxed text-sm font-medium">
+                            <div className="text-[#2C2C2A]/90 leading-relaxed font-light text-sm font-medium">
                                 <MathText text={reportData.analysis_data?.improvement_suggestions || ''} />
                             </div>
                         </section>
                     </div>
 
                     {/* Footer / Parent Guide */}
-                    <div className="mt-12 md:mt-16 pt-8 border-t border-slate-200">
+                    <div className="mt-12 md:mt-16 pt-8 border-t border-[#2C2C2A]/10">
                         <div className="flex flex-col md:flex-row items-start gap-4">
-                            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 hidden md:flex">
-                                <Icon name="MessageCircle" size={20} className="text-slate-400" />
+                            <div className="w-12 h-12 rounded-full bg-white/60 border border-[#2C2C2A]/5 flex items-center justify-center flex-shrink-0 hidden md:flex">
+                                <Icon name="MessageCircle" size={20} className="text-[#A68B5C]" />
                             </div>
                             <div>
-                                <h4 className="text-base font-serif font-bold text-slate-900 mb-2">Message for Parents</h4>
-                                <div className="text-slate-600 text-sm mb-4 italic">
+                                <h4 className="text-base font-serif font-light tracking-wide text-[#2C2C2A] mb-2">Message for Parents</h4>
+                                <div className="text-[#2C2C2A]/70 text-sm mb-4 italic">
                                     &quot;<MathText text={reportData.parent_guide?.opening_ment || ''} />&quot;
                                 </div>
-                                <div className="bg-slate-50 p-4 rounded-lg inline-block w-full">
-                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Home Coaching Tips</span>
+                                <div className="bg-white/40 border border-[#2C2C2A]/5 backdrop-blur-sm p-4 rounded-lg inline-block w-full">
+                                    <span className="text-xs font-bold text-[#A68B5C] uppercase tracking-wider block mb-2">Home Coaching Tips</span>
                                     <ul className="space-y-2">
                                         {(reportData.parent_guide?.encouragement_tips || []).map((tip, idx) => (
-                                            <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
-                                                <span className="w-1 h-1 bg-slate-400 rounded-full mt-2 flex-shrink-0"></span>
+                                            <li key={idx} className="text-sm text-[#2C2C2A]/80 flex items-start gap-2">
+                                                <span className="w-1 h-1 bg-[#A68B5C] rounded-full mt-2 flex-shrink-0"></span>
                                                 <div className="break-keep">
                                                     <MathText text={tip} />
                                                 </div>
@@ -333,23 +333,23 @@ export const ReportView = ({
                     </div>
 
                     {/* Image Section */}
-                    <section className="mt-12 md:mt-16 pt-8 border-t border-slate-200">
+                    <section className="mt-12 md:mt-16 pt-8 border-t border-[#2C2C2A]/10">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span> Board Analytics
+                                <span className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Board Analytics
                             </h3>
                             <button
                                 onClick={() => setIsEnhancedMode(!isEnhancedMode)}
-                                className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-500 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-full transition-colors print:hidden"
+                                className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-500 hover:text-slate-900 bg-[#A68B5C]/10 px-3 py-1.5 rounded-full transition-colors print:hidden"
                             >
                                 {isEnhancedMode ? <Icon name="EyeOff" size={12} /> : <Icon name="Eye" size={12} />}
                                 <span className="hidden sm:inline">{isEnhancedMode ? '원본 색상' : '가독성 모드'}</span>
                             </button>
                         </div>
-                        <div className="bg-slate-50 p-2 md:p-4 rounded-xl border border-slate-100">
+                        <div className="bg-white/30 p-2 md:p-4 rounded-xl border border-[#2C2C2A]/5 backdrop-blur-sm">
                             <div className="space-y-4">
                                 {images.map((img, idx) => (
-                                    <div key={idx} className="rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm relative group cursor-pointer">
+                                    <div key={idx} className="rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm relative group cursor-pointer">
                                         <img
                                             src={img}
                                             alt={`Board ${idx + 1}`}

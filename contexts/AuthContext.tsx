@@ -57,8 +57,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                             };
                             const { setDoc } = await import('firebase/firestore');
                             await setDoc(doc(db, 'teachers', user.uid), data, { merge: true });
-                        } else if (data.role !== 'admin') {
-                            // Upgrade role if needed
+                        } else if (data.role !== 'admin' && data.role !== 'super_admin') {
+                            // Upgrade role if needed, but don't overwrite super_admin
                             data.role = 'admin';
                             const { updateDoc } = await import('firebase/firestore');
                             await updateDoc(doc(db, 'teachers', user.uid), { role: 'admin' });

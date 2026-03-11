@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { db } from '@/lib/firebase';
+import UniversalMigration from '../admin/UniversalMigration';
 import { collection, query, orderBy, limit, getDocs, where, Timestamp, deleteDoc, doc, setDoc, QueryConstraint } from 'firebase/firestore';
 import { Icon } from '@/components/ui/Icon';
 import { useRouter } from 'next/navigation';
@@ -31,6 +32,8 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     const router = useRouter();
     const [reports, setReports] = useState<ReportDoc[]>([]);
     const [fetching, setFetching] = useState(true);
+    // View Control
+    const [filterMode, setFilterMode] = useState<'recent' | 'month'>('recent'); // 'recent' (last 3 months) or 'month' (specific month)
     const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
     const [showAnalytics, setShowAnalytics] = useState(false);
 
@@ -38,7 +41,7 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCenter, setSelectedCenter] = useState('All');
     const [selectedDepartment, setSelectedDepartment] = useState('All');
-    const [onlyMyReports, setOnlyMyReports] = useState(viewMode === 'teacher'); // Default true for teacher? Or just option
+    const [onlyMyReports, setOnlyMyReports] = useState(viewMode === 'teacher');
 
     // Derived Data
     const [centers, setCenters] = useState<string[]>([]);
@@ -102,35 +105,36 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                 let q;
                 const baseRef = collection(db, 'reports');
 
-                // Role-based Query Construction
-                if (viewMode === 'teacher') {
-                    // Teacher mode: fetching all for month, filtering locally for 'onlyMyReports' usually
-                    // But for performance, maybe we should filter by teacherId? 
-                    // stick to existing logic for teacher mode to avoid breaking 'all center' view if they are allowed?
-                    // Actually teachers usually only see their center reports in filter logic (line 136).
-                    q = query(baseRef, where('month', '==', monthFilter), orderBy('createdAt', 'desc'));
-                } else {
-                    // Start with base constraints
+                if (filterMode === 'month') {
+                    // Specific Month Query (Strict)
+                    // Uses 'month' equality + 'createdAt' sort. Requires Index if fields differ.
+                    // Assuming 'month' and 'createdAt' composite index (or single) works/exists as before.
+
                     const constraints: QueryConstraint[] = [
-                        where('month', '==', monthFilter),
-                        orderBy('createdAt', 'desc')
+                        where('month', '==', monthFilter)
                     ];
 
-                    const role = userData?.role;
-                    if (role === 'center_admin' && userData?.centerName) {
-                        constraints.push(where('centerName', '==', userData.centerName));
-                    } else if (role === 'dept_admin' && userData?.centerName) {
-                        constraints.push(where('centerName', '==', userData.centerName));
-                        // Note: department might not always be present on reports or might be optional?
-                        // If we enforce it, we might miss reports where dept is missing.
-                        // But for dept_admin, they should only see their dept.
-                        if (userData.department) {
-                            constraints.push(where('department', '==', userData.department));
-                        }
-                    }
-                    // super_admin / admin (legacy) sees all
+                    // Note: We removed orderBy('createdAt', 'desc') to avoid index requirements.
+                    // We also removed server-side center/dept filtering for the same reason.
+                    // The volume of reports per month is expected to be manageable for client-side sorting/filtering.
 
                     q = query(baseRef, ...constraints);
+
+                } else {
+                    // Recent Mode (Last 3 Months) - "Safe Query"
+                    // To avoid missing composite indexes (e.g. centerName + createdAt),
+                    // We query ONLY by time range and sort, then filter in memory.
+                    // This guarantees we get the data without needing new indexes immediately.
+
+                    const threeMonthsAgo = new Date();
+                    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 6); // Extended to 6 months per plan
+                    const minTimestamp = Timestamp.fromDate(threeMonthsAgo);
+
+                    q = query(baseRef,
+                        where('createdAt', '>=', minTimestamp),
+                        orderBy('createdAt', 'desc')
+                        // No other 'where' clauses to prevent index errors
+                    );
                 }
 
                 const querySnapshot = await getDocs(q);
@@ -140,30 +144,42 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
 
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
+                    // Additional Client-side filtering
+                    if (viewMode !== 'teacher') {
+                        const role = userData?.role;
+                        if (role === 'center_admin' && userData?.centerName) {
+                            if (data.centerName !== userData.centerName) return;
+                        } else if (role === 'dept_admin' && userData?.centerName) {
+                            if (data.centerName !== userData.centerName) return;
+                            if (userData.department && data.department !== userData.department) return;
+                        }
+                    }
+
                     docs.push({ id: doc.id, ...data } as ReportDoc);
                     if (data.centerName) uniqueCenters.add(data.centerName);
                     if (data.department) uniqueDepartments.add(data.department);
                 });
 
-                setReports(docs);
+                // Sort docs by createdAt desc (since we removed server-side sort for 'month' mode)
+                docs.sort((a, b) => {
+                    const tA = a.createdAt?.toMillis() || 0;
+                    const tB = b.createdAt?.toMillis() || 0;
+                    return tB - tA;
+                });
 
                 setReports(docs);
                 setCenters(Array.from(uniqueCenters).sort());
                 setDepartments(Array.from(uniqueDepartments).sort());
-                setDepartments(Array.from(uniqueDepartments).sort());
 
-                // Set initial center filter based on role/mode
                 if (viewMode === 'teacher' && userData?.centerName) {
                     setSelectedCenter(userData.centerName);
                 } else if (viewMode === 'admin') {
-                    // For admins, we might need to force the selection
                     const userRole = userData?.role;
                     if (userRole === 'center_admin' || userRole === 'dept_admin') {
                         if (userData?.centerName) setSelectedCenter(userData.centerName);
                     } else if (!selectedCenter) {
                         setSelectedCenter('All');
                     }
-
                     if (userRole === 'dept_admin' && userData?.department) {
                         setSelectedDepartment(userData.department);
                     }
@@ -171,9 +187,8 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
 
             } catch (error) {
                 console.error("Error fetching reports:", error);
-                // Fallback attempt
                 try {
-                    // Simple fallback query
+                    // Fallback
                     const q2 = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(50));
                     const s2 = await getDocs(q2);
                     const docs2: ReportDoc[] = [];
@@ -186,25 +201,30 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
         };
 
         fetchReports();
-    }, [user, monthFilter, userData, viewMode]);
+    }, [user, monthFilter, userData, viewMode, filterMode]);
 
     const getGradeFromReport = (className: string, courseName: string) => {
         const text = (className || '') + ' ' + (courseName || '');
 
-        // 1. Try English prefixes with digits (M1, H2, etc.)
+        // 1. Try Korean patterns (초1, 중2, 고3) - PRIORITIZED
+        // This ensures '중3H1' is matched as '중3' first, ignoring the 'H1' part.
+        const koMatch = text.match(/(초|중|고)(\d)/);
+        if (koMatch) return `${koMatch[1]}${koMatch[2]}`;
+
+        // 2. Try English prefixes with digits (M1, H2, etc.)
         const mMatch = text.match(/M(\d)/i);
         if (mMatch) return `중${mMatch[1]}`;
 
         const hMatch = text.match(/H(\d)/i);
         if (hMatch) return `고${hMatch[1]}`;
 
-        // 2. Try Korean patterns (초1, 중2, 고3)
-        const koMatch = text.match(/(초|중|고)(\d)/);
-        if (koMatch) return `${koMatch[1]}${koMatch[2]}`;
+        // 3. General fallbacks for H/M (without numbers)
+        // Also check for Korean "중등"/"고등" explicitly if needed, but regex above handles numbers.
+        if (text.includes('중등')) return '중등';
+        if (text.includes('고등')) return '고등';
 
-        // 3. General fallbacks for H/M
-        if (/H/i.test(text)) return '고등';
         if (/M/i.test(text)) return '중등';
+        if (/H/i.test(text)) return '고등';
 
         return '기타';
     };
@@ -353,37 +373,57 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     if (loading) return null;
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10">
-            <div className="max-w-7xl mx-auto space-y-8">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+        <div className="min-h-screen bg-background text-foreground p-6 md:p-10 font-sans">
+            <div className="max-w-7xl mx-auto space-y-12">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-foreground/5 pb-6">
                     <div>
-                        <h1 className="text-3xl font-serif font-bold text-slate-900">
-                            {viewMode === 'teacher' ? `${userData?.centerName || '내'} 리포트 관리` : '통합 관리자 대시보드'}
+                        <h1 className="text-2xl md:text-3xl font-serif font-light tracking-[0.1em] uppercase text-foreground mb-2">
+                            {viewMode === 'teacher' ? `${userData?.centerName || 'My'} Reports` : 'Admin Dashboard'}
                         </h1>
-                        <p className="text-slate-500">
+                        <p className="text-foreground/50 text-[11px] uppercase tracking-[0.2em] font-medium">
                             {viewMode === 'teacher'
-                                ? '나의 리포트 및 학생 관리'
-                                : '전체 센터 리포트 현황 및 통합 관리'}
+                                ? 'Report Management System'
+                                : 'Centralized Management & Insights'}
                         </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-2 sm:flex items-center gap-3 w-full sm:w-auto">
                         <button
                             onClick={() => setShowAnalytics(!showAnalytics)}
-                            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-sm
-                                ${showAnalytics ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'}`}
+                            className={`col-span-1 px-4 py-2.5 rounded-xl text-xs tracking-wider uppercase font-medium flex items-center justify-center gap-2 transition-all shadow-sm border
+                                ${showAnalytics ? 'bg-foreground text-background border-foreground' : 'bg-white/50 text-foreground/70 hover:bg-white/80 border-white/60 backdrop-blur-sm'}`}
                         >
-                            <Icon name={showAnalytics ? "FileText" : "BarChart"} size={16} />
-                            {showAnalytics ? "리스트 보기" : "분석 현황 보기"}
+                            <Icon name={showAnalytics ? "FileText" : "BarChart"} size={14} />
+                            <span className="truncate">{showAnalytics ? "List View" : "Analytics"}</span>
                         </button>
-                        <input
-                            type="month"
-                            value={monthFilter}
-                            onChange={(e) => setMonthFilter(e.target.value)}
-                            className="bg-white border border-slate-300 rounded px-3 py-2 text-sm shadow-sm"
-                        />
-                        <button onClick={() => router.push('/')} className="bg-slate-900 border border-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 shadow-md transition-all flex items-center gap-2">
+                        <div className="flex bg-white/40 p-1 rounded-xl border border-white/60 shadow-[0_2px_8px_rgba(0,0,0,0.02)] backdrop-blur-sm">
+                            <button
+                                onClick={() => setFilterMode('recent')}
+                                className={`px-4 py-1.5 text-xs font-medium uppercase tracking-wider rounded-lg transition-all ${filterMode === 'recent' ? 'bg-white text-foreground shadow-sm' : 'text-foreground/50 hover:text-foreground/80'}`}
+                            >
+                                6 Months
+                            </button>
+                            <button
+                                onClick={() => setFilterMode('month')}
+                                className={`px-4 py-1.5 text-xs font-medium uppercase tracking-wider rounded-lg transition-all ${filterMode === 'month' ? 'bg-white text-foreground shadow-sm' : 'text-foreground/50 hover:text-foreground/80'}`}
+                            >
+                                By Month
+                            </button>
+                        </div>
+
+                        {filterMode === 'month' && (
+                            <div className="col-span-1 relative h-[38px] animate-fade-in-left">
+                                <Icon name="Calendar" className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40 pointer-events-none" size={14} />
+                                <input
+                                    type="month"
+                                    value={monthFilter}
+                                    onChange={(e) => setMonthFilter(e.target.value)}
+                                    className="w-full h-full bg-white/50 border border-white/60 rounded-xl pl-9 pr-3 py-2 text-xs shadow-sm font-medium text-foreground outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/20 transition-all cursor-pointer backdrop-blur-sm"
+                                />
+                            </div>
+                        )}
+                        <button onClick={() => router.push('/')} className="col-span-2 sm:col-span-1 bg-white/70 hover:bg-white/90 text-foreground/80 border border-white px-5 py-2.5 rounded-xl text-xs tracking-[0.2em] font-medium uppercase shadow-[0_4px_16px_rgba(0,0,0,0.03)] transition-all flex items-center justify-center gap-2 h-[38px] backdrop-blur-md">
                             <Icon name="PenTool" size={14} />
-                            리포트 생성하기
+                            Compose
                         </button>
 
                         {viewMode === 'admin' && (
@@ -392,30 +432,32 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                     setAdminCenterInput(userData?.centerName || '');
                                     setShowSettingsModal(true);
                                 }}
-                                className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-50 hover:text-amber-600 hover:border-amber-300 transition-colors shadow-sm flex items-center gap-2"
+                                className="col-span-2 sm:col-span-1 bg-white/40 border border-white/60 text-foreground/60 px-4 py-2.5 rounded-xl text-xs tracking-wider uppercase font-medium hover:bg-white/70 hover:text-foreground transition-all shadow-[0_2px_8px_rgba(0,0,0,0.02)] backdrop-blur-sm flex items-center justify-center gap-2 h-[38px]"
                             >
-                                <Icon name="Settings" size={16} />
-                                <span>관리자 소속 설정</span>
+                                <Icon name="Settings" size={14} />
+                                <span>Settings</span>
                             </button>
                         )}
                     </div>
                 </div>
 
+                {/* Content Area */}
+
                 {/* Admin Tabs Navigation */}
                 {viewMode === 'admin' && (
-                    <div className="flex gap-4 border-b border-slate-200">
+                    <div className="flex w-full overflow-x-auto gap-4 mb-4">
                         <button
                             onClick={() => setActiveTab('reports')}
-                            className={`pb-3 px-1 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'reports' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            className={`pb-2 px-2 text-[13px] font-medium tracking-[0.1em] uppercase transition-all flex items-center justify-center gap-2 whitespace-nowrap border-b border-transparent ${activeTab === 'reports' ? 'text-foreground border-foreground' : 'text-foreground/40 hover:text-foreground/70'}`}
                         >
-                            <Icon name="FileText" size={16} />
+                            <Icon name="FileText" size={14} />
                             리포트 관리
                         </button>
                         <button
                             onClick={() => setActiveTab('teachers')}
-                            className={`pb-3 px-1 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'teachers' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            className={`pb-2 px-2 text-[13px] font-medium tracking-[0.1em] uppercase transition-all flex items-center justify-center gap-2 whitespace-nowrap border-b border-transparent ${activeTab === 'teachers' ? 'text-foreground border-foreground' : 'text-foreground/40 hover:text-foreground/70'}`}
                         >
-                            <Icon name="Users" size={16} />
+                            <Icon name="Users" size={14} />
                             선생님 & 센터 관리
                         </button>
                     </div>
@@ -425,21 +467,21 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                 {activeTab === 'teachers' && viewMode === 'admin' ? (
                     <TeacherManager />
                 ) : (
-                    <>
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-center">
-                            <div className="relative flex-1 min-w-[240px]">
-                                <Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <div className="space-y-6">
+                        <div className="bg-white/40 p-5 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.02)] border border-white/60 backdrop-blur-md grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-4 items-center">
+                            <div className="relative col-span-1 sm:col-span-2 lg:flex-1 min-w-[200px]">
+                                <Icon name="Search" className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground/30" size={16} />
                                 <input
                                     type="text"
-                                    placeholder="이름, 클래스, 과정, 주제 검색..."
+                                    placeholder="Search reports..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-sm transition-all"
+                                    className="w-full pl-11 pr-4 py-2.5 bg-white/50 border-b border-foreground/10 focus:bg-white/80 focus:border-foreground/30 outline-none text-sm transition-all text-foreground rounded-t-xl"
                                 />
                             </div>
 
                             {viewMode === 'admin' && (
-                                <div className="relative min-w-[160px]">
+                                <div className="relative col-span-1 lg:min-w-[140px]">
                                     <select
                                         value={selectedCenter}
                                         onChange={(e) => setSelectedCenter(e.target.value)}
@@ -453,39 +495,41 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                 </div>
                             )}
 
-                            <div className="relative min-w-[160px]">
-                                <select
-                                    value={selectedDepartment}
-                                    onChange={(e) => setSelectedDepartment(e.target.value)}
-                                    disabled={userData?.role === 'dept_admin'}
-                                    className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
-                                >
-                                    <option value="All">All Departments</option>
-                                    {Array.from(new Set([...departments, ...fetchedDepartments])).sort().map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                                <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                            </div>
+                            {viewMode === 'admin' && (
+                                <div className="relative col-span-1 lg:min-w-[140px]">
+                                    <select
+                                        value={selectedDepartment}
+                                        onChange={(e) => setSelectedDepartment(e.target.value)}
+                                        disabled={userData?.role === 'dept_admin'}
+                                        className={`w-full pl-4 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-amber-500 outline-none text-sm appearance-none cursor-pointer font-medium text-slate-700 ${userData?.role === 'dept_admin' ? 'bg-slate-100 text-slate-500 opacity-70 cursor-not-allowed' : ''}`}
+                                    >
+                                        <option value="All">All Depts</option>
+                                        {Array.from(new Set([...departments, ...fetchedDepartments])).sort().map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                    <Icon name="ChevronDown" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                                </div>
+                            )}
 
                             {/* Simplified Teacher View - Only My Reports is IMPLICIT if viewMode is teacher */}
                             {viewMode === 'teacher' ? (
-                                <div className="px-3 py-2 bg-indigo-50 text-indigo-700 text-sm font-bold rounded-lg border border-indigo-100 flex items-center gap-2">
+                                <div className="hidden lg:flex col-span-1 lg:w-auto px-3 py-2 bg-indigo-50 text-indigo-700 text-sm font-bold rounded-lg border border-indigo-100 items-center justify-center gap-2">
                                     <Icon name="UserCheck" size={16} />
-                                    내 리포트만 보기 중
+                                    내 리포트
                                 </div>
                             ) : (
                                 // Admin can toggle
-                                <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors select-none">
+                                <label className="col-span-1 lg:w-auto flex items-center justify-center gap-2 cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors select-none">
                                     <input
                                         type="checkbox"
                                         checked={onlyMyReports}
                                         onChange={(e) => setOnlyMyReports(e.target.checked)}
                                         className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
                                     />
-                                    <span className="text-sm font-bold text-slate-600">내 리포트만 보기</span>
+                                    <span className="text-sm font-bold text-slate-600 whitespace-nowrap">내 리포트</span>
                                 </label>
                             )}
 
-                            <button onClick={downloadCSV} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                            <button onClick={downloadCSV} className="col-span-1 lg:w-auto bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                                 <Icon name="Download" size={16} /> CSV
                             </button>
                         </div>
@@ -615,20 +659,21 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                         ) : (
                             <div className="space-y-8">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total Reports</div>
-                                        <div className="text-2xl font-bold text-slate-900">{filteredReports.length}</div>
+                                    {/* Stats simplified for luxury feel */}
+                                    <div className="bg-white/40 p-6 rounded-2xl border border-white/60 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.02)]">
+                                        <div className="text-[10px] text-foreground/40 uppercase font-medium tracking-[0.2em] mb-2">Total Reports</div>
+                                        <div className="text-3xl font-light text-foreground">{filteredReports.length}</div>
                                     </div>
-                                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                                        <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Students</div>
-                                        <div className="text-2xl font-bold text-slate-900">{new Set(filteredReports.map(r => r.studentName)).size}</div>
+                                    <div className="bg-white/40 p-6 rounded-2xl border border-white/60 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.02)]">
+                                        <div className="text-[10px] text-foreground/40 uppercase font-medium tracking-[0.2em] mb-2">Students</div>
+                                        <div className="text-3xl font-light text-foreground">{new Set(filteredReports.map(r => r.studentName)).size}</div>
                                     </div>
                                 </div>
 
                                 {filteredReports.length === 0 ? (
-                                    <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
-                                        <Icon name="FileX" className="mx-auto text-slate-300 mb-4" size={48} />
-                                        <p className="text-slate-500 font-medium">검색 조건에 맞는 리포트가 없습니다.</p>
+                                    <div className="text-center py-24 bg-white/30 rounded-3xl border border-white/50 backdrop-blur-md">
+                                        <Icon name="FileX" className="mx-auto text-foreground/20 mb-4" size={40} />
+                                        <p className="text-foreground/50 font-light tracking-wide text-sm">No reports match your search criteria.</p>
                                     </div>
                                 ) : (
                                     gradeOrder.concat(Object.keys(groupedReports).filter(k => !gradeOrder.includes(k))).map(grade => {
@@ -636,57 +681,57 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                         if (!gradeReports || gradeReports.length === 0) return null;
 
                                         return (
-                                            <div key={grade} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                                <div className="bg-slate-900 px-6 py-3 flex items-center justify-between">
-                                                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                                                        <span className="w-2 h-8 bg-amber-500 rounded-sm inline-block mr-1"></span>
+                                            <div key={grade} className="bg-white/50 backdrop-blur-xl rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.03)] border border-white/60 overflow-hidden mb-6">
+                                                <div className="bg-white/30 backdrop-blur-sm px-8 py-4 flex items-center justify-between border-b border-foreground/5">
+                                                    <h3 className="text-sm font-medium text-foreground tracking-[0.2em] uppercase flex items-center gap-3">
                                                         {grade}
-                                                        <span className="text-slate-400 text-sm font-normal ml-2">({gradeReports.length})</span>
+                                                        <span className="text-foreground/30 text-xs font-light">({gradeReports.length})</span>
                                                     </h3>
                                                 </div>
-                                                <div className="divide-y divide-slate-100">
+                                                <div className="divide-y divide-foreground/5 px-4 pb-2">
                                                     {gradeReports.map(report => (
-                                                        <div key={report.id} className="p-4 hover:bg-slate-50 transition-colors flex flex-col md:flex-row items-center gap-4">
-                                                            <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-12 gap-4 items-center w-full">
-                                                                <div className="col-span-1 md:col-span-2">
-                                                                    <div className="text-sm text-slate-500 mb-0.5">{report.createdAt?.toDate().toLocaleDateString()}</div>
-                                                                    <div className="text-xs text-slate-400">{report.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                                        <div key={report.id} className="p-4 mx-2 my-2 rounded-2xl hover:bg-white/60 border border-transparent hover:border-white transition-all flex flex-col md:flex-row items-center gap-6">
+                                                            <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4 items-start md:items-center w-full">
+                                                                <div className="col-span-1 md:col-span-2 flex md:block items-center justify-between">
+                                                                    <div className="text-xs text-foreground/40 font-mono tracking-wider mb-0.5">{report.createdAt?.toDate().toLocaleDateString()}</div>
+                                                                    <div className="text-[10px] text-foreground/30 font-mono hidden md:block">{report.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                                                                 </div>
-                                                                <div className="col-span-1 md:col-span-2">
-                                                                    <div className="font-bold text-slate-900 text-lg">{report.studentName}</div>
+                                                                <div className="col-span-1 md:col-span-3">
+                                                                    <div className="font-serif text-foreground text-lg">{report.studentName}</div>
                                                                 </div>
-                                                                <div className="col-span-2 md:col-span-2">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-xs font-bold text-slate-600">{report.className}</span>
-                                                                    </div>
-                                                                    <div className="text-xs text-slate-400 mt-1 truncate">{report.courseName}</div>
-                                                                </div>
-                                                                <div className="col-span-2 md:col-span-2">
-                                                                    <div className="text-sm font-medium text-slate-900">{report.teacherName}</div>
-                                                                    <div className="flex gap-1 flex-wrap">
-                                                                        <div className="text-xs text-amber-600 font-bold uppercase">{report.centerName}</div>
-                                                                        {report.department && (
-                                                                            <div className="text-xs text-indigo-600 font-bold uppercase">({report.department})</div>
-                                                                        )}
+                                                                <div className="col-span-1 md:col-span-3">
+                                                                    <div className="flex gap-2 flex-col">
+                                                                        <span className="text-sm text-foreground/80 font-medium">{report.className}</span>
+                                                                        <span className="text-xs text-foreground/40 truncate">{report.courseName}</span>
                                                                     </div>
                                                                 </div>
-                                                                <div className="col-span-2 md:col-span-4">
-                                                                    <div className="text-sm text-slate-700 font-medium truncate">{report.reportData?.report_info?.topic}</div>
+                                                                <div className="col-span-1 md:col-span-4 mt-2 md:mt-0">
+                                                                    <div className="text-xs text-foreground/60 leading-relaxed truncate">{report.reportData?.report_info?.topic || "No Topic"}</div>
+                                                                    <div className="flex gap-2 items-center mt-2.5">
+                                                                        <div className="flex items-center gap-1.5 text-foreground/60 bg-foreground/[0.03] border border-foreground/[0.05] px-2.5 py-1 rounded-md">
+                                                                            <Icon name="Users" size={10} className="opacity-70" />
+                                                                            <span className="text-[10.5px] font-medium tracking-wider">{report.teacherName}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 text-foreground/60 bg-foreground/[0.03] border border-foreground/[0.05] px-2.5 py-1 rounded-md">
+                                                                            <Icon name="MapPin" size={10} className="opacity-70" />
+                                                                            <span className="text-[10.5px] font-medium tracking-wider">{report.centerName}</span>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex-shrink-0 w-full md:w-auto flex justify-end gap-2">
+                                                            <div className="flex-shrink-0 w-full md:w-auto flex justify-end gap-3 border-t border-foreground/5 md:border-0 pt-4 md:pt-0">
                                                                 <button
                                                                     onClick={() => window.open(`${window.location.origin}/report/${report.id}`, '_blank')}
-                                                                    className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2.5 rounded-lg hover:bg-amber-100 transition-colors font-bold text-sm"
+                                                                    className="flex items-center justify-center gap-2 bg-white/70 hover:bg-white text-foreground/80 border border-white px-5 py-2.5 rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all text-[11px] font-medium uppercase tracking-[0.1em]"
                                                                 >
-                                                                    <Icon name="Link" size={14} />
-                                                                    <span className="break-keep">View Report</span>
+                                                                    <Icon name="Link" size={12} />
+                                                                    <span>Open</span>
                                                                 </button>
                                                                 {(viewMode === 'admin' || report.teacherName === userData?.displayName) && (
                                                                     <button
                                                                         onClick={() => handleDeleteReport(report.id)}
-                                                                        className="flex items-center gap-2 bg-red-100 text-red-600 px-3 py-2.5 rounded-lg hover:bg-red-200 border border-red-300 transition-colors font-bold text-sm shadow-sm"
-                                                                        title="리포트 삭제"
+                                                                        className="flex items-center justify-center gap-2 bg-red-50/50 hover:bg-red-50 text-red-500 border border-red-100/50 px-3 py-2.5 rounded-xl transition-all shadow-[0_2px_10px_rgba(0,0,0,0.02)]"
+                                                                        title="삭제"
                                                                     >
                                                                         <Icon name="Trash2" size={14} />
                                                                     </button>
@@ -701,46 +746,74 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                 )}
                             </div>
                         )}
-                    </>
+                    </div>
                 )}
 
                 {/* Admin Settings Modal */}
                 {showSettingsModal && (
-                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
-                        <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-bold text-slate-900">관리자 소속 설정</h3>
-                                <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-slate-600">
+                    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+                        <div className="bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_16px_64px_rgba(0,0,0,0.1)] border border-white max-w-2xl w-full p-8 space-y-8 relative max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center border-b border-foreground/10 pb-6">
+                                <h3 className="text-xl font-serif font-light tracking-[0.1em] text-foreground uppercase flex items-center gap-3">
+                                    <Icon name="Settings" size={20} className="text-foreground/60" />
+                                    관리자 설정
+                                </h3>
+                                <button onClick={() => setShowSettingsModal(false)} className="text-foreground/40 hover:text-foreground p-2 rounded-full transition-colors active:scale-95">
                                     <Icon name="X" size={20} />
                                 </button>
                             </div>
-                            <p className="text-sm text-slate-500">
-                                관리자님의 소속 센터를 입력해주세요.<br />
-                                이 정보는 리포트 생성 및 대시보드 상단에 표시됩니다.
-                            </p>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">Center Name</label>
-                                <input
-                                    type="text"
-                                    value={adminCenterInput}
-                                    onChange={(e) => setAdminCenterInput(e.target.value)}
-                                    className="w-full px-4 py-2 border border-slate-300 rounded focus:border-amber-500 outline-none"
-                                    placeholder="예: 과사람 의대관"
-                                />
-                            </div>
-                            <div className="flex justify-end gap-2 pt-2">
+
+                            <section className="space-y-6">
+                                <h4 className="text-[11px] font-medium text-foreground/50 uppercase tracking-[0.2em] flex items-center gap-2">
+                                    <Icon name="User" size={14} />
+                                    개인 설정
+                                </h4>
+                                <div className="bg-white/50 p-6 rounded-2xl border border-white/60 space-y-6 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
+                                    <div className="space-y-3 relative group">
+                                        <label className="block text-[10px] font-medium text-foreground/50 uppercase tracking-[0.2em] transition-colors group-focus-within:text-foreground">소속 센터 (Center Name)</label>
+                                        <input
+                                            type="text"
+                                            value={adminCenterInput}
+                                            onChange={(e) => setAdminCenterInput(e.target.value)}
+                                            className="w-full px-2 py-3 bg-transparent border-b border-foreground/20 text-foreground font-light focus:outline-none focus:border-foreground transition-all placeholder:text-foreground/30 text-base"
+                                            placeholder="예: 과사람 의대관"
+                                        />
+                                        <p className="text-[11px] text-foreground/40 font-light tracking-wide pt-1">
+                                            리포트 생성 및 대시보드 표시용 소속 정보입니다.
+                                        </p>
+                                    </div>
+                                    <div className="flex justify-end pt-4">
+                                        <button
+                                            onClick={handleSaveAdminCenter}
+                                            disabled={savingSettings}
+                                            className="px-6 py-2.5 bg-foreground text-background/90 text-xs font-medium tracking-[0.2em] uppercase rounded-xl hover:bg-foreground/90 transition-all disabled:opacity-50 active:scale-95 shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex items-center gap-2"
+                                        >
+                                            <Icon name="Save" size={14} />
+                                            {savingSettings ? '저장 중...' : '변경사항 저장'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            {/* Super Admin Section */}
+                            {(userData?.role === 'super_admin' || userData?.role === 'admin') && (
+                                <section className="space-y-6 pt-8 border-t border-foreground/10">
+                                    <h4 className="text-[11px] font-medium text-amber-600/80 uppercase tracking-[0.2em] flex items-center gap-2">
+                                        <Icon name="Shield" size={14} />
+                                        Super Admin 전용 도구
+                                    </h4>
+                                    <div className="bg-amber-50/50 backdrop-blur-sm p-6 rounded-2xl border border-amber-200/50 shadow-sm">
+                                        <UniversalMigration />
+                                    </div>
+                                </section>
+                            )}
+
+                            <div className="flex justify-end pt-6">
                                 <button
                                     onClick={() => setShowSettingsModal(false)}
-                                    className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded"
+                                    className="px-6 py-2.5 bg-white/60 text-foreground/60 hover:text-foreground border border-transparent hover:border-foreground/10 text-xs font-medium tracking-[0.2em] uppercase rounded-xl transition-all active:scale-95"
                                 >
-                                    취소
-                                </button>
-                                <button
-                                    onClick={handleSaveAdminCenter}
-                                    disabled={savingSettings}
-                                    className="px-4 py-2 bg-slate-900 text-white rounded font-bold hover:bg-slate-800 disabled:opacity-50"
-                                >
-                                    {savingSettings ? '저장 중...' : '저장하기'}
+                                    닫기
                                 </button>
                             </div>
                         </div>

@@ -3,7 +3,8 @@ import {
     RefreshCw, ChevronRight, Eye, EyeOff, Printer, Maximize2,
     X, GraduationCap, Key, Download, LucideIcon,
     BarChart, PieChart, TrendingUp, Users, MapPin, Calendar,
-    Building, Calculator, LineChart, Link, Search, PenTool, FileX, ChevronDown, MonitorPlay, AlertCircle, LogOut, FileText
+    Building, Calculator, LineChart, Link, Search, PenTool, FileX, ChevronDown, MonitorPlay, AlertCircle, LogOut, FileText,
+    Image, Camera
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -15,7 +16,8 @@ const iconMap: Record<string, LucideIcon> = {
     RefreshCw, ChevronRight, Eye, EyeOff, Printer, Maximize2,
     X, GraduationCap, Key, Download,
     BarChart, PieChart, TrendingUp, Users, MapPin, Calendar,
-    Building, Calculator, LineChart, Link, Search, PenTool, FileX, ChevronDown, MonitorPlay, AlertCircle, LogOut, FileText
+    Building, Calculator, LineChart, Link, Search, PenTool, FileX, ChevronDown, MonitorPlay, AlertCircle, LogOut, FileText,
+    Image, Camera
 };
 
 export type IconName = keyof typeof iconMap;

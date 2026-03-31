@@ -1,5 +1,8 @@
 'use server';
 
+// Allow up to 5 minutes for page capture
+export const maxDuration = 300;
+
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import fs from 'fs';

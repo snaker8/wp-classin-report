@@ -1,6 +1,7 @@
 'use server';
 
-import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import fs from 'fs';
 import path from 'path';
 
@@ -34,9 +35,18 @@ export async function capturePages(url: string): Promise<CaptureResult> {
 
     let browser;
     try {
-        browser = await puppeteer.launch({
+        // Use @sparticuz/chromium for serverless (Firebase), fallback to local Chrome for dev
+        const executablePath = await chromium.executablePath() ||
+            process.env.CHROME_PATH ||
+            (process.platform === 'win32'
+                ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+                : '/usr/bin/google-chrome');
+
+        browser = await puppeteerCore.launch({
+            args: chromium.args,
+            defaultViewport: null,
+            executablePath,
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
         });
 
         const page = await browser.newPage();

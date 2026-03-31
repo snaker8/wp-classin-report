@@ -1,6 +1,7 @@
 'use server';
 
-import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -16,6 +17,33 @@ export interface CaptureResult {
 }
 
 const MIN_OVERLAY_SIZE = 2000;
+
+async function launchBrowser() {
+    // Try @sparticuz/chromium first (serverless)
+    try {
+        const execPath = await chromium.executablePath();
+        if (execPath) {
+            return await puppeteerCore.launch({
+                args: chromium.args,
+                executablePath: execPath,
+                headless: true,
+            });
+        }
+    } catch (e) {
+        console.log('sparticuz/chromium failed, trying fallback:', e);
+    }
+
+    // Fallback: local system Chrome
+    const localChrome = process.platform === 'win32'
+        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+        : '/usr/bin/google-chrome';
+
+    return await puppeteerCore.launch({
+        executablePath: process.env.CHROME_PATH || localChrome,
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+}
 
 export async function capturePages(url: string): Promise<CaptureResult> {
     const empty: CaptureResult = {
@@ -33,17 +61,7 @@ export async function capturePages(url: string): Promise<CaptureResult> {
 
     let browser;
     try {
-        browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--single-process',
-                '--no-zygote',
-            ],
-        });
+        browser = await launchBrowser();
 
         const page = await browser.newPage();
         await page.setViewport({ width: 1280, height: 5000 });

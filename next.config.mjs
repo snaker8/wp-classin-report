@@ -6,13 +6,20 @@ const nextConfig = {
         serverActions: {
             bodySizeLimit: '100mb',
         },
+        serverComponentsExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
     },
     serverActions: {
         bodySizeLimit: '100mb',
     },
     serverExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
-    webpack: (config, { dev, isServer }) => {
-        // Obfuscation removed due to build errors and deployment issues.
+    webpack: (config, { isServer }) => {
+        if (isServer) {
+            config.externals = config.externals || [];
+            config.externals.push({
+                'puppeteer-core': 'commonjs puppeteer-core',
+                '@sparticuz/chromium': 'commonjs @sparticuz/chromium',
+            });
+        }
         return config;
     },
 };

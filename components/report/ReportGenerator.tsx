@@ -141,8 +141,13 @@ export default function ReportGenerator() {
         setError(null);
 
         try {
-            setCaptureProgress('페이지 캡처 중... (약 40초 소요)');
+            setCaptureProgress('페이지 캡처 중... (최대 2분 소요)');
             const result = await capturePages(captureUrl.trim());
+
+            if (!result) {
+                setError('캡처 응답이 없습니다. 다시 시도해주세요.');
+                return;
+            }
 
             if (result.error) {
                 setError(`캡처 실패: ${result.error}`);
@@ -294,6 +299,9 @@ export default function ReportGenerator() {
             });
 
             const parsedData = await aiPromise;
+            if (!parsedData) {
+                throw new Error('AI 분석 결과가 비어있습니다. 다시 시도해주세요.');
+            }
             setReportData(parsedData);
 
             if (user) {

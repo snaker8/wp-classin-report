@@ -8,6 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
+import { capturePages } from '@/app/actions/capturePages';
 import CameraCapture from '@/components/ui/CameraCapture';
 
 interface Attachment {
@@ -31,6 +32,7 @@ export default function ReportGenerator() {
     // File States
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Refs for split inputs
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +49,18 @@ export default function ReportGenerator() {
     const [saveError, setSaveError] = useState<string | null>(null);
     const [reportId, setReportId] = useState<string | null>(null);
 
+    // AI Personalization States
+    const [aiStyle, setAiStyle] = useState('다정함'); // '기본', '다정함', '직설적'
+    const [customInstructions, setCustomInstructions] = useState('');
+    const [studentMemo, setStudentMemo] = useState('');
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    // URL Capture States
+    const [captureUrl, setCaptureUrl] = useState('');
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [captureProgress, setCaptureProgress] = useState('');
+    const [captureImagePaths, setCaptureImagePaths] = useState<string[]>([]);
+
     // Set Teacher Name from User Data
     useEffect(() => {
         if (userData?.displayName) {
@@ -61,6 +75,28 @@ export default function ReportGenerator() {
     const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             await processFiles(Array.from(e.target.files));
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
+
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            await processFiles(Array.from(e.dataTransfer.files));
         }
     };
 
@@ -94,6 +130,75 @@ export default function ReportGenerator() {
 
     const handleCameraCapture = async (file: File) => {
         await processFiles([file]);
+    };
+
+    // URL Capture Handler
+    const handleUrlCapture = async () => {
+        if (!captureUrl.trim()) return;
+
+        setIsCapturing(true);
+        setCaptureProgress('페이지 접속 중...');
+        setError(null);
+
+        try {
+            setCaptureProgress('페이지 캡처 중... (약 40초 소요)');
+            const result = await capturePages(captureUrl.trim());
+
+            if (result.error) {
+                setError(`캡처 실패: ${result.error}`);
+                return;
+            }
+
+            if (result.imagePaths.length === 0) {
+                setError('캡처된 이미지가 없습니다. URL을 확인해주세요.');
+                return;
+            }
+
+            // Auto-fill student info from captured data
+            if (result.studentName && !studentName) setStudentName(result.studentName);
+            if (result.className && !className) setClassName(result.className);
+            if (result.materialName && !courseName) setCourseName(result.materialName);
+
+            setCaptureProgress(`이미지 로딩 중... (${result.imagePaths.length}장)`);
+
+            // Fetch images from public paths and convert to File attachments
+            const newAttachments: Attachment[] = [];
+            for (let i = 0; i < result.imagePaths.length; i++) {
+                try {
+                    const response = await fetch(result.imagePaths[i]);
+                    const blob = await response.blob();
+                    const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
+
+                    const preview = await new Promise<string>((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.readAsDataURL(blob);
+                    });
+
+                    newAttachments.push({
+                        id: Math.random().toString(36).substring(7),
+                        file,
+                        type: 'image' as const,
+                        preview,
+                        objectUrl: URL.createObjectURL(blob),
+                    });
+                } catch (e) {
+                    console.warn(`Failed to load captured image ${i + 1}:`, e);
+                }
+            }
+
+            setAttachments(prev => [...prev, ...newAttachments]);
+            setCaptureImagePaths(result.imagePaths); // Store paths for server-side reading
+            setReportData(null);
+            setCaptureProgress(`캡처 완료! ${result.totalPages}페이지 중 풀이 ${result.filteredCount}페이지 추출`);
+            setCaptureUrl('');
+
+        } catch (err) {
+            console.error('URL capture error:', err);
+            setError(err instanceof Error ? err.message : 'URL 캡처 중 오류가 발생했습니다.');
+        } finally {
+            setIsCapturing(false);
+        }
     };
 
     const removeAttachment = (id: string) => {
@@ -156,17 +261,20 @@ export default function ReportGenerator() {
         setError(null);
 
         try {
-            const processedAttachments = await Promise.all(attachments.map(async (attachment) => {
+            // If we have capture paths, use server-side file reading (bypass body limit)
+            // Only process non-captured attachments as base64
+            const hasCaptureImages = captureImagePaths.length > 0;
+
+            const manualAttachments = hasCaptureImages
+                ? attachments.filter(a => !a.file.name.startsWith('capture_page_'))
+                : attachments;
+
+            const processedAttachments = await Promise.all(manualAttachments.map(async (attachment) => {
                 let base64Data: string;
 
                 if (attachment.type === 'pdf') {
                     base64Data = attachment.preview.split(',')[1];
                 } else {
-                    // Check if image is extremely tall (likely a captured long-scroll)
-                    // If so, we might want to be less aggressive with resizing, or just pass it through if it's not insane
-                    // But Gemni Flash has limits.
-                    // Let's bump MAX_SIZE significantly to 3072 (3x previous) to allow for legible text in long captures.
-                    // And/Or we could check aspect ratio in compressImageForAI
                     const compressedBlob = await compressImageForAI(attachment.file);
                     base64Data = await new Promise((resolve) => {
                         const reader = new FileReader();
@@ -191,7 +299,11 @@ export default function ReportGenerator() {
                 className,
                 courseName,
                 attachments: processedAttachments,
-                model: 'flash'
+                captureImagePaths: hasCaptureImages ? captureImagePaths : undefined,
+                model: 'flash',
+                aiStyle,
+                customInstructions,
+                studentMemo
             });
 
             const parsedData = await aiPromise;
@@ -304,10 +416,13 @@ export default function ReportGenerator() {
         setClassName('');
         setCourseName('');
         setAttachments([]);
+        setCaptureImagePaths([]);
+        setCaptureProgress('');
         setReportData(null);
         setError(null);
         setIsEnhancedMode(false);
         setReportId(null);
+        // Do not reset AI personalization settings to allow quick successive generations with the same settings
     };
 
     const viewImages = attachments
@@ -333,11 +448,26 @@ export default function ReportGenerator() {
     }
 
     return (
-        <div className="max-w-[480px] w-full mx-auto space-y-6 md:space-y-8 animate-fade-in relative z-10 py-8">
+        <div 
+            className="max-w-[480px] w-full mx-auto space-y-6 md:space-y-8 animate-fade-in relative z-10 py-8"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
             <div className="bg-[#f0ece5]/30 backdrop-blur-2xl p-10 rounded-[32px] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-white/60 relative overflow-hidden">
+                {isDragging && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-md border-2 border-dashed border-[#2a2a2a]/20 rounded-[32px] animate-in fade-in zoom-in duration-200">
+                        <div className="text-center space-y-4">
+                            <div className="w-16 h-16 bg-[#2a2a2a]/10 rounded-full flex items-center justify-center mx-auto">
+                                <Icon name="Upload" size={32} className="text-[#2a2a2a]" />
+                            </div>
+                            <p className="text-lg font-serif tracking-widest text-[#2a2a2a]">DROP FILES HERE</p>
+                        </div>
+                    </div>
+                )}
                 <div className="text-center space-y-3 mb-12">
                     <h2 className="text-[28px] font-serif font-light tracking-widest text-[#2a2a2a]">START ANALYSIS</h2>
-                    <p className="text-[#3a3a3a]/70 font-light text-[11.5px] tracking-wide leading-relaxed">
+                    <p className="text-[#3a3a3a]/85 font-light text-[12.5px] tracking-wide leading-relaxed">
                         <span className="font-medium text-[#2a2a2a]">과사람 동래센터</span>의 전문적인 분석 시스템입니다.<br />
                         학생의 판서 이미지 또는 PDF 자료를 업로드해 주세요.
                     </p>
@@ -385,8 +515,51 @@ export default function ReportGenerator() {
                         </div>
                     </div>
 
+                    {/* URL Capture Section */}
+                    <div className="space-y-3 pt-4">
+                        <label className="block text-[11px] font-medium text-[#2a2a2a]/75 uppercase tracking-[0.2em]">
+                            URL Auto Capture
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="url"
+                                value={captureUrl}
+                                onChange={(e) => setCaptureUrl(e.target.value)}
+                                placeholder="https://class.orzo.kr/public-reports/..."
+                                disabled={isCapturing}
+                                className="flex-1 pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/30 text-sm"
+                            />
+                            <button
+                                onClick={handleUrlCapture}
+                                disabled={isCapturing || !captureUrl.trim()}
+                                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all flex items-center gap-2 whitespace-nowrap ${
+                                    isCapturing || !captureUrl.trim()
+                                        ? 'bg-white/30 text-[#2a2a2a]/30 cursor-not-allowed'
+                                        : 'bg-[#2a2a2a] text-white hover:bg-[#1a1a1a] active:scale-[0.98]'
+                                }`}
+                            >
+                                {isCapturing ? (
+                                    <>
+                                        <Icon name="Loader2" size={12} className="animate-spin" />
+                                        <span>캡처 중...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon name="Globe" size={12} />
+                                        <span>자동 캡처</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                        {captureProgress && (
+                            <p className={`text-[11px] ${captureProgress.includes('완료') ? 'text-emerald-600' : 'text-[#2a2a2a]/60'}`}>
+                                {captureProgress}
+                            </p>
+                        )}
+                    </div>
+
                     <div className="space-y-4 pt-4">
-                        <label className="block text-[10px] font-medium text-[#2a2a2a]/50 uppercase tracking-[0.2em]">Board Images & PDF <span className="text-red-400 font-normal">*</span></label>
+                        <label className="block text-[11px] font-medium text-[#2a2a2a]/75 uppercase tracking-[0.2em]">Board Images & PDF <span className="text-red-400 font-normal">*</span></label>
                         <div className={`grid grid-cols-1 md:grid-cols-2 gap-4`}>
                             {/* PDF Upload Button */}
                             <div
@@ -397,8 +570,8 @@ export default function ReportGenerator() {
                                     <Icon name="FileText" size={20} />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-[13px] text-foreground/80 tracking-wide">Add PDF</p>
-                                    <p className="text-[10px] text-foreground/40 mt-1 uppercase tracking-widest">Upload Documents</p>
+                                    <p className="font-medium text-[13px] text-foreground/85 tracking-wide">Add PDF</p>
+                                    <p className="text-[11px] text-foreground/60 mt-1 uppercase tracking-widest">Upload Documents</p>
                                 </div>
                                 <input
                                     ref={pdfInputRef}
@@ -433,8 +606,8 @@ export default function ReportGenerator() {
                                     <Icon name="Image" size={20} />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-[13px] text-foreground/80 tracking-wide">Add Photos</p>
-                                    <p className="text-[10px] text-foreground/40 mt-1 uppercase tracking-widest">Select from Gallery</p>
+                                    <p className="font-medium text-[13px] text-foreground/85 tracking-wide">Add Photos</p>
+                                    <p className="text-[11px] text-foreground/60 mt-1 uppercase tracking-widest">Select from Gallery</p>
                                 </div>
                                 <input
                                     ref={imageInputRef}
@@ -491,7 +664,22 @@ export default function ReportGenerator() {
                         </div>
                     )}
 
-                    <div className="pt-8">
+                    {/* Personalization Settings Button */}
+                    <div className="flex justify-end pt-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsSettingsOpen(true)}
+                            className="flex items-center gap-1.5 text-xs text-[#2a2a2a]/80 hover:text-[#2a2a2a] transition-colors bg-white/50 px-3 py-1.5 rounded-full border border-white/60 shadow-sm"
+                        >
+                            <Icon name="Settings" size={12} />
+                            <span>AI 코멘트 설정</span>
+                            {(aiStyle !== '기본' || customInstructions || studentMemo) && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 ml-1"></span>
+                            )}
+                        </button>
+                    </div>
+
+                    <div className="pt-4">
                         <button
                             onClick={handleGenerateReport}
                             disabled={isLoading || !studentName || attachments.length === 0}
@@ -514,6 +702,95 @@ export default function ReportGenerator() {
                     </div>
                 </div>
             </div>
+
+            {/* AI Settings Modal - Glassmorphism */}
+            {isSettingsOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0a0a0a]/40 backdrop-blur-sm">
+                    <div className="bg-[#f0ece5]/95 backdrop-blur-3xl w-full max-w-lg rounded-2xl shadow-2xl border border-white/40 overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="p-5 border-b border-[#2a2a2a]/10 flex justify-between items-center bg-white/20">
+                            <h3 className="font-serif text-lg tracking-wide text-[#2a2a2a] flex items-center gap-2">
+                                <Icon name="Settings" size={18} className="text-[#2a2a2a]/70" />
+                                AI 코멘트 개인화 설정
+                            </h3>
+                            <button onClick={() => setIsSettingsOpen(false)} className="text-[#2a2a2a]/50 hover:text-[#2a2a2a] transition-colors p-1">
+                                <Icon name="X" size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto space-y-6 text-[#2a2a2a] font-light text-sm">
+                            {/* AI Style Select */}
+                            <div className="space-y-2">
+                                <label className="block text-xs uppercase tracking-widest text-[#2a2a2a]/80 font-medium font-sans">AI 스타일</label>
+                                <div className="relative">
+                                    <select 
+                                        value={aiStyle} 
+                                        onChange={(e) => setAiStyle(e.target.value)}
+                                        className="w-full appearance-none bg-white/50 border border-white/60 text-[#2a2a2a] py-2.5 px-4 rounded-lg focus:outline-none focus:border-[#2a2a2a]/30 transition-all font-medium"
+                                    >
+                                        <option value="기본">기본 (차분하고 객관적인 강사 톤)</option>
+                                        <option value="다정함">다정함 (격려와 칭찬을 아끼지 않는 친절한 톤)</option>
+                                        <option value="직설적">직설적 (팩트 기반의 단호하고 분석적인 톤)</option>
+                                    </select>
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[#2a2a2a]/50">
+                                        <Icon name="ChevronDown" size={16} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Custom Instructions */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-end">
+                                    <label className="block text-xs uppercase tracking-widest text-[#2a2a2a]/80 font-medium font-sans">맞춤형 지침</label>
+                                    <span className="text-[11px] text-[#2a2a2a]/55">{customInstructions.length}/100</span>
+                                </div>
+                                <p className="text-[12px] text-[#3a3a3a]/75 leading-relaxed pb-1">AI 코멘트 작성 시 최우선으로 반영할 특별 지시사항을 작성하세요. (예: 칭찬 위주로 써주세요, 분량을 짧게 해주세요 등)</p>
+                                <textarea 
+                                    value={customInstructions}
+                                    onChange={(e) => setCustomInstructions(e.target.value)}
+                                    maxLength={100}
+                                    placeholder="사용 안 함"
+                                    className="w-full bg-white/50 border border-white/60 text-[#2a2a2a] py-3 px-4 rounded-lg focus:outline-none focus:border-[#2a2a2a]/30 transition-all resize-none h-20 placeholder:text-[#2a2a2a]/30 font-medium"
+                                />
+                            </div>
+
+                            {/* Student Memo */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-end">
+                                    <label className="block text-xs uppercase tracking-widest text-[#2a2a2a]/80 font-medium font-sans">학생별 메모 (참고사항)</label>
+                                    <span className="text-[11px] text-[#2a2a2a]/55">{studentMemo.length}/300</span>
+                                </div>
+                                <p className="text-[12px] text-[#3a3a3a]/75 leading-relaxed pb-1">해당 학생의 수업 태도, 습관, 특징 등을 적어주시면 AI가 분석 내용에 자연스럽게 녹여냅니다.</p>
+                                <textarea 
+                                    value={studentMemo}
+                                    onChange={(e) => setStudentMemo(e.target.value)}
+                                    maxLength={300}
+                                    placeholder="예) 수업 태도가 좋고 질문이 많음. 단순 계산 실수가 잦은 편이나 응용력은 뛰어남. 과제 제출률이 좋음."
+                                    className="w-full bg-white/50 border border-white/60 text-[#2a2a2a] py-3 px-4 rounded-lg focus:outline-none focus:border-[#2a2a2a]/30 transition-all resize-none h-28 placeholder:text-[#2a2a2a]/30 font-medium"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-5 border-t border-[#2a2a2a]/10 bg-white/20 flex gap-3 justify-end">
+                            <button 
+                                onClick={() => {
+                                    setAiStyle('다정함');
+                                    setCustomInstructions('');
+                                    setStudentMemo('');
+                                }}
+                                className="px-5 py-2.5 rounded-lg text-sm font-medium text-[#2a2a2a]/60 hover:text-[#2a2a2a] hover:bg-black/5 transition-all"
+                            >
+                                초기화
+                            </button>
+                            <button 
+                                onClick={() => setIsSettingsOpen(false)}
+                                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-[#2a2a2a] text-white hover:bg-[#1a1a1a] shadow-md transition-all active:scale-[0.98]"
+                            >
+                                저장 및 닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

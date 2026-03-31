@@ -9,22 +9,30 @@ export default function SecurityProvider({
 }) {
     useEffect(() => {
         const preventDefault = (e: Event) => {
+            const target = e.target as HTMLElement;
+            if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+                return;
+            }
             e.preventDefault();
         };
 
         const handleKeydown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+
             // Prevent F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
             if (
                 e.key === "F12" ||
-                (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J")) ||
-                (e.ctrlKey && e.key === "u")
+                (e.ctrlKey && e.shiftKey && (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "j")) ||
+                (e.ctrlKey && e.key.toLowerCase() === "u")
             ) {
                 e.preventDefault();
             }
-            // Prevent Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A
+            // Prevent Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+A (Unless typing in input)
             if (
+                !isInput &&
                 e.ctrlKey &&
-                (e.key === "c" || e.key === "x" || e.key === "v" || e.key === "a")
+                (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x" || e.key.toLowerCase() === "v" || e.key.toLowerCase() === "a")
             ) {
                 e.preventDefault();
             }

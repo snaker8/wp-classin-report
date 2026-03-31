@@ -11,7 +11,7 @@ interface UserData {
     displayName: string | null;
     centerName?: string;
     department?: string; // e.g. 의대관, 특목관
-    role?: 'super_admin' | 'center_admin' | 'dept_admin' | 'teacher' | 'admin'; // 'admin' is legacy super_admin
+    role?: 'super_admin' | 'center_admin' | 'dept_admin' | 'teacher' | 'admin' | 'unauthorized'; // 'admin' is legacy super_admin
 }
 
 interface AuthContextType {
@@ -68,12 +68,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     if (data) {
                         setUserData({ ...data, uid: user.uid } as UserData);
                     } else {
-                        // Fallback
+                        // Fallback (e.g. if user document was deleted)
                         setUserData({
                             uid: user.uid,
                             email: user.email,
                             displayName: user.displayName,
-                            role: isLegacyAdmin ? 'admin' : 'teacher' // Default
+                            role: isLegacyAdmin ? 'admin' : 'unauthorized' // Default to unauthorized if no record found
                         });
                     }
                 } catch (error) {

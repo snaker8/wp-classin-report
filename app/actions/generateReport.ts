@@ -1,5 +1,8 @@
 'use server';
 
+import fs from 'fs';
+import path from 'path';
+
 
 
 
@@ -34,9 +37,10 @@ const SYSTEM_PROMPT = `
 
 # [OPERATIONAL PROCESS]
 1. **문제 식별:** 판서에 포함된 문제의 지문이나 도형을 먼저 파악합니다.
-2. **풀이 추적:** 학생이 작성한 풀이 과정(전개식, 보조선 등)을 한 줄씩 따라가며 논리적 흐름을 확인합니다.
-3. **오류/통찰 발견:** 막힌 지점이나 기발한 발상 포인트를 찾아내어 **구체적인 근거(식의 몇 번째 줄 등)**와 함께 기록합니다.
-4. **리포트 생성:** 분석된 내용을 바탕으로 부모님이 이해하기 쉬우면서도 전문적인 리포트를 작성합니다.
+2. **풀이 존재 여부 판별:** 이미지에 학생의 손글씨 풀이가 있는 문제를 중심으로 분석하십시오. 문제만 있고 풀이가 없는 이미지는 분석에서 제외하거나 간략히 언급만 하십시오.
+3. **풀이 추적:** 학생이 작성한 풀이 과정(전개식, 보조선 등)을 한 줄씩 따라가며 논리적 흐름을 확인합니다.
+4. **오류/통찰 발견:** 막힌 지점이나 기발한 발상 포인트를 찾아내어 **구체적인 근거(식의 몇 번째 줄 등)**와 함께 기록합니다.
+5. **리포트 생성:** 분석된 내용을 바탕으로 부모님이 이해하기 쉬우면서도 전문적인 리포트를 작성합니다.
 
 # [JSON OUTPUT SCHEMA]
 출력은 반드시 아래 구조의 유효한 JSON 데이터여야 하며, 다른 설명 문구는 포함하지 마십시오.
@@ -76,7 +80,11 @@ export async function generateReport(data: {
     className: string,
     courseName: string,
     attachments: { type: 'image' | 'pdf', base64: string }[],
-    model?: 'pro' | 'flash'
+    captureImagePaths?: string[],  // server-side file paths from URL capture
+    model?: 'pro' | 'flash',
+    aiStyle?: string,
+    customInstructions?: string,
+    studentMemo?: string
 }) {
     const apiKey = process.env.GEMINI_API_KEY;
 
@@ -84,19 +92,40 @@ export async function generateReport(data: {
         throw new Error('Server API Key is not configured.');
     }
 
-    const { studentName, className, courseName, attachments } = data;
+    const { studentName, className, courseName, attachments, aiStyle = '기본', customInstructions = '', studentMemo = '' } = data;
+
+    // Construct the dynamic prompt extension
+    let aiPersonalizationPrompt = `\n\n# [AI 코멘트 개인화 지침 - 매우 중요]\n다음 조건을 반드시 준수하여 리포트의 어조와 내용을 조정하십시오.\n`;
+
+    if (studentMemo) {
+        aiPersonalizationPrompt += `\n**[학생 특이사항/메모]**\n- 선생님의 메모: "${studentMemo}"\n- 지시: 위 메모 내용을 바탕으로 학생의 학습 태도, 강점, 약점 등을 분석 결과에 자연스럽고 구체적으로 반영하십시오. 부모님께 전달되는 내용이므로 정제된 표현을 사용하되, 메모의 핵심 사실은 꼭 포함하십시오.\n`;
+    }
+
+    if (aiStyle === '다정함') {
+        aiPersonalizationPrompt += `\n**[어조 및 스타일 설정: 다정함]**\n- 지시: 학생의 성취와 노력을 아낌없이 칭찬하고, 부족한 부분도 따뜻하게 격려하는 매우 부드럽고 친절한 선생님의 어조로 작성하십시오. '잘했습니다', '훌륭합니다', '조금만 더 노력하면 완벽해질 거예요'와 같은 긍정적인 표현을 적극 사용하십시오.\n`;
+    } else if (aiStyle === '직설적') {
+        aiPersonalizationPrompt += `\n**[어조 및 스타일 설정: 직설적]**\n- 지시: 객관적인 사실을 기반으로 학생의 현재 문제점과 개선점, 치명적인 오개념 등을 명확하고 단호하게 짚어내는 분석적인 어조로 작성하십시오. 감정적인 칭찬보다는 냉철한 진단과 확실한 해결책 제시에 집중하십시오.\n`;
+    } else {
+        aiPersonalizationPrompt += `\n**[어조 및 스타일 설정: 기본]**\n- 지시: 신뢰감을 주는 학원 강사 특유의 전문적이고 차분한 어조를 유지하십시오. 객관적인 사실 기반으로 작성하되, 너무 딱딱하지 않게 전문성을 강조하십시오. (위의 SYSTEM ROLE 에 명시된 전문적인 어조 준수)\n`;
+    }
+
+    if (customInstructions) {
+        aiPersonalizationPrompt += `\n**[맞춤형 특별 지시사항]**\n- 지시: "${customInstructions}"\n- 중요도 최상: 위 맞춤형 지시사항을 분석 및 리포트 작성 시 1순위로 엄격하게 반영하십시오.\n`;
+    } else {
+        aiPersonalizationPrompt += `\n**[맞춤형 지시사항]**\n- 없음. 기본적인 SYSTEM ROLE과 분석 원칙을 준수하여 작성하십시오.\n`;
+    }
 
     // Construct the prompt based on the model
     let parts: ({ text: string } | { inlineData: { mimeType: string, data: string } })[] = [];
 
-    // Use the full SYSTEM_PROMPT for all models (including Flash) to match "ChaMath" quality
-    // Removing the "Flash Mode" abbreviated instructions.
+    // Combine original SYSTEM_PROMPT + Dynamic Personalization
     parts = [
         {
-            text: `${SYSTEM_PROMPT}\n\n학생 이름: ${studentName}\n클래스: ${className}\n과정: ${courseName}\n이미지를 정밀 분석하여 리포트를 작성하십시오.`
+            text: `${SYSTEM_PROMPT}${aiPersonalizationPrompt}\n\n학생 이름: ${studentName}\n클래스: ${className}\n과정: ${courseName}\n이미지를 정밀 분석하여 위 지침에 맞는 리포트를 작성하십시오.`
         }
     ];
 
+    // Add images from base64 attachments (manual upload)
     for (const attachment of attachments) {
         parts.push({
             inlineData: {
@@ -104,6 +133,27 @@ export async function generateReport(data: {
                 data: attachment.base64
             }
         });
+    }
+
+    // Add images from server-side file paths (URL capture - bypasses body size limit)
+    if (data.captureImagePaths && data.captureImagePaths.length > 0) {
+        for (const imgPath of data.captureImagePaths) {
+            try {
+                const fullPath = path.join(process.cwd(), 'public', imgPath);
+                if (fs.existsSync(fullPath)) {
+                    const imageBuffer = fs.readFileSync(fullPath);
+                    const base64Data = imageBuffer.toString('base64');
+                    parts.push({
+                        inlineData: {
+                            mimeType: 'image/jpeg',
+                            data: base64Data
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn(`Failed to read capture image: ${imgPath}`, e);
+            }
+        }
     }
 
     console.log("Starting Generate Report Action");

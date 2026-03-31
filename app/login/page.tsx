@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Icon } from '@/components/ui/Icon';
 
 export default function LoginPage() {
@@ -45,7 +46,7 @@ export default function LoginPage() {
                             </span>
                         </div>
 
-                        <p className="text-[#3a3a3a]/80 font-medium text-[13px] tracking-wide leading-relaxed pl-1">
+                        <p className="text-[#3a3a3a]/90 font-medium text-[13.5px] tracking-wide leading-relaxed pl-1">
                             의학·이공계 최상위 입시를 위한 프리미엄 학습 분석 시스템
                         </p>
                     </div>
@@ -81,7 +82,7 @@ export default function LoginPage() {
                                         placeholder="Password"
                                     />
                                     <div className="text-right pt-2.5">
-                                        <a href="#" className="text-[11px] text-[#2a2a2a]/40 hover:text-[#2a2a2a]/80 transition-colors">Forgot Password?</a>
+                                        <a href="#" className="text-[12.5px] text-[#2a2a2a]/60 hover:text-[#2a2a2a] transition-colors">Forgot Password?</a>
                                     </div>
                                 </div>
                             </div>
@@ -102,6 +103,18 @@ export default function LoginPage() {
                                     {loading && <Icon name="Loader2" size={14} className="animate-spin" />}
                                     로그인
                                 </button>
+                            </div>
+
+                            <div className="pt-6 text-center">
+                                <p className="text-[14px] text-[#2a2a2a]/75 tracking-wide">
+                                    계정이 없으신가요?{' '}
+                                    <Link 
+                                        href="/signup" 
+                                        className="text-[#2a2a2a]/80 hover:text-[#2a2a2a] font-medium transition-colors border-b border-[#2a2a2a]/20 hover:border-[#2a2a2a]/60 pb-0.5"
+                                    >
+                                        회원가입
+                                    </Link>
+                                </p>
                             </div>
                         </form>
                     </div>

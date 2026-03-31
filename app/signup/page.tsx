@@ -30,17 +30,35 @@ export default function SignupPage() {
             // 2. Update Profile (DisplayName)
             await updateProfile(user, { displayName: name });
 
-            // 3. Save to Firestore (Teachers Collection)
+            // 3. Check for Invitation
+            let assignedRole: string = 'teacher';
+            let assignedCenter = centerName;
+            let assignedDept = department;
+
+            try {
+                const { getDoc, doc } = await import('firebase/firestore');
+                const inviteDoc = await getDoc(doc(db, 'invitations', email.toLowerCase()));
+                if (inviteDoc.exists()) {
+                    const inviteData = inviteDoc.data();
+                    assignedRole = inviteData.role || 'teacher';
+                    assignedCenter = inviteData.centerName || centerName;
+                    assignedDept = inviteData.department || department;
+                }
+            } catch (inviteErr) {
+                console.error("Error checking invitation:", inviteErr);
+            }
+
+            // 4. Save to Firestore (Teachers Collection)
             await setDoc(doc(db, 'teachers', user.uid), {
                 email: email,
                 displayName: name,
-                centerName: centerName,
-                department: department,
-                role: 'teacher', // Default role
+                centerName: assignedCenter,
+                department: assignedDept,
+                role: assignedRole, 
                 createdAt: new Date().toISOString()
             });
 
-            // 4. Redirect
+            // 5. Redirect
             router.push('/');
         } catch (err: unknown) {
             console.error(err);
@@ -52,90 +70,125 @@ export default function SignupPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-100 w-full max-w-md space-y-6">
-                <div className="text-center space-y-2">
-                    <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center mx-auto text-white mb-4">
-                        <Icon name="GraduationCap" size={24} />
+        <div className="min-h-screen bg-background flex overflow-hidden font-sans text-foreground">
+            {/* Left Side: Brand Vibe */}
+            <div className="hidden lg:flex w-1/2 relative items-center justify-center p-12">
+                <div className="relative z-10 text-center w-full max-w-lg">
+                    <div className="mb-4 text-left select-none flex flex-col items-start pl-8">
+                        {/* Text 'WP 과사람' - Refined Luxury Style */}
+                        <div className="flex items-baseline gap-4 mb-3">
+                            <span className="font-serif text-6xl tracking-widest text-[#2a2a2a]">
+                                WP
+                            </span>
+                            <span className="font-serif text-[42px] tracking-[0.1em] text-[#2a2a2a] ml-1">
+                                과사람
+                            </span>
+                        </div>
+
+                        <p className="text-[#3a3a3a]/90 font-medium text-[13.5px] tracking-wide leading-relaxed pl-1">
+                            의학·이공계 최상위 입시를 위한 프리미엄 학습 분석 시스템
+                        </p>
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-900 font-serif">선생님 회원가입</h1>
-                    <p className="text-slate-500 text-sm">리포트 관리를 위한 계정을 생성하세요</p>
                 </div>
+            </div>
 
-                <form onSubmit={handleSignup} className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">이름</label>
-                        <input
-                            type="text"
-                            required
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded focus:border-amber-500 outline-none text-slate-900 font-medium placeholder:text-slate-400"
-                            placeholder="성함 (예: 김선생)"
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">지점명 (센터)</label>
-                            <input
-                                type="text"
-                                required
-                                value={centerName}
-                                onChange={(e) => setCenterName(e.target.value)}
-                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded focus:border-amber-500 outline-none text-slate-900 font-medium placeholder:text-slate-400"
-                                placeholder="예: 대치 본원"
-                            />
+            {/* Right Side: Signup Form */}
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12 relative bg-background">
+                <div className="w-full max-w-[420px] relative z-10">
+                    {/* Card - Frosted Glass Luxury */}
+                    <div className="bg-[#f0ece5]/30 backdrop-blur-2xl border border-white/60 rounded-[28px] p-10 pt-12 pb-14 shadow-[0_20px_50px_rgba(0,0,0,0.08)]">
+                        <div className="mb-10 text-center">
+                            <div className="flex justify-center mb-6">
+                                <Icon name="GraduationCap" size={32} className="text-[#2a2a2a]/80" />
+                            </div>
+                            <h1 className="text-[28px] font-serif font-light text-[#2a2a2a] tracking-wide mb-2">Sign Up</h1>
+                            <p className="text-[#2a2a2a]/75 text-[13px] font-light tracking-wide">선생님 계정을 생성하세요</p>
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">소속 (관)</label>
-                            <input
-                                type="text"
-                                required
-                                value={department}
-                                onChange={(e) => setDepartment(e.target.value)}
-                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded focus:border-amber-500 outline-none text-slate-900 font-medium placeholder:text-slate-400"
-                                placeholder="예: 의대관"
-                            />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">이메일</label>
-                        <input
-                            type="email"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded focus:border-amber-500 outline-none text-slate-900 font-medium placeholder:text-slate-400"
-                            placeholder="teacher@example.com"
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">비밀번호</label>
-                        <input
-                            type="password"
-                            required
-                            minLength={6}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded focus:border-amber-500 outline-none text-slate-900 font-medium placeholder:text-slate-400"
-                            placeholder="6자리 이상 입력"
-                        />
-                    </div>
 
-                    {error && <p className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</p>}
+                        <form onSubmit={handleSignup} className="space-y-6">
+                            <div className="space-y-5">
+                                <div>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
+                                        placeholder="이름 (예: 김선생)"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input
+                                        type="text"
+                                        required
+                                        value={centerName}
+                                        onChange={(e) => setCenterName(e.target.value)}
+                                        className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
+                                        placeholder="지점 (예: 대치 본원)"
+                                    />
+                                    <input
+                                        type="text"
+                                        required
+                                        value={department}
+                                        onChange={(e) => setDepartment(e.target.value)}
+                                        className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
+                                        placeholder="소속 (예: 의대관)"
+                                    />
+                                </div>
+                                <div>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
+                                        placeholder="Email"
+                                    />
+                                </div>
+                                <div>
+                                    <input
+                                        type="password"
+                                        required
+                                        minLength={6}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
+                                        placeholder="Password (6자리 이상)"
+                                    />
+                                </div>
+                            </div>
 
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
-                    >
-                        {loading && <Icon name="Loader2" size={16} className="animate-spin" />}
-                        계정 생성
-                    </button>
-                </form>
+                            {error && (
+                                <div className="p-3 bg-red-50/50 backdrop-blur-sm rounded-lg flex items-center gap-2 text-red-800 text-xs font-medium mt-4">
+                                    <Icon name="AlertCircle" size={14} className="text-red-500" />
+                                    {error}
+                                </div>
+                            )}
 
-                <div className="text-center text-sm text-slate-500">
-                    이미 계정이 있으신가요? <a href="/login" className="text-amber-600 hover:underline">로그인</a>
+                            <div className="pt-6">
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-gradient-to-b from-[#e5e5e5] to-[#d4d4d4] hover:from-[#d4d4d4] hover:to-[#c4c4c4] text-[#2a2a2a]/80 font-medium py-3 rounded-lg shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_2px_4px_rgba(0,0,0,0.05)] border border-white/40 transform transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm tracking-wide"
+                                >
+                                    {loading && <Icon name="Loader2" size={14} className="animate-spin" />}
+                                    계정 생성
+                                </button>
+                            </div>
+                            
+                            <div className="pt-6 text-center">
+                                <p className="text-[14px] text-[#2a2a2a]/75 tracking-wide">
+                                    이미 계정이 있으신가요?{' '}
+                                    <a 
+                                        href="/login" 
+                                        className="text-[#2a2a2a]/80 hover:text-[#2a2a2a] font-medium transition-colors border-b border-[#2a2a2a]/20 hover:border-[#2a2a2a]/60 pb-0.5"
+                                    >
+                                        로그인
+                                    </a>
+                                </p>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

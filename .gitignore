@@ -37,3 +37,7 @@ next-env.d.ts
 
 # firebase
 .firebase/
+
+# temp captures
+/public/tmp-captures/
+/scripts/test-output/

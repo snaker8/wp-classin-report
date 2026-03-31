@@ -1,7 +1,7 @@
 'use client';
 
 import { Icon } from '@/components/ui/Icon';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MathText } from '@/components/ui/MathText';
 
 export interface ReportData {
@@ -42,6 +42,28 @@ export const ReportView = ({
     saving, saveError, readOnly = false
 }: ReportViewProps) => {
     const [copied, setCopied] = useState(false);
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+    // Keyboard navigation for lightbox
+    const handleKeyDown = useCallback((e: KeyboardEvent) => {
+        if (lightboxIndex === null) return;
+        if (e.key === 'ArrowRight' && lightboxIndex < images.length - 1) setLightboxIndex(lightboxIndex + 1);
+        if (e.key === 'ArrowLeft' && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
+        if (e.key === 'Escape') setLightboxIndex(null);
+    }, [lightboxIndex, images.length]);
+
+    useEffect(() => {
+        if (lightboxIndex !== null) {
+            window.addEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = '';
+        };
+    }, [lightboxIndex, handleKeyDown]);
 
     const handleCopyLink = () => {
         if (!reportId) return;
@@ -332,11 +354,12 @@ export const ReportView = ({
                         </div>
                     </div>
 
-                    {/* Image Section */}
+                    {/* Image Section - Thumbnail Grid */}
                     <section className="mt-12 md:mt-16 pt-8 border-t border-[#2C2C2A]/10">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Board Analytics
+                                <span className="text-xs font-normal text-[#2C2C2A]/50 ml-1">({images.length})</span>
                             </h3>
                             <button
                                 onClick={() => setIsEnhancedMode(!isEnhancedMode)}
@@ -347,21 +370,84 @@ export const ReportView = ({
                             </button>
                         </div>
                         <div className="bg-white/30 p-2 md:p-4 rounded-xl border border-[#2C2C2A]/5 backdrop-blur-sm">
-                            <div className="space-y-4">
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 md:gap-3">
                                 {images.map((img, idx) => (
-                                    <div key={idx} className="rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm relative group cursor-pointer">
+                                    <div
+                                        key={idx}
+                                        onClick={() => setLightboxIndex(idx)}
+                                        className="relative rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm cursor-pointer group hover:border-[#A68B5C]/40 hover:shadow-md transition-all aspect-[3/4]"
+                                    >
                                         <img
                                             src={img}
-                                            alt={`Board ${idx + 1}`}
-                                            className={`w-full h-auto object-contain transition-all duration-500 ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
-                                            style={{}}
+                                            alt={`문제 ${idx + 1}`}
+                                            className={`w-full h-full object-cover object-top transition-all duration-300 group-hover:scale-105 ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
                                             loading="lazy"
                                         />
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-1.5 md:p-2">
+                                            <span className="text-white text-[10px] md:text-xs font-medium">{idx + 1}</span>
+                                        </div>
+                                        <div className="absolute inset-0 bg-[#A68B5C]/0 group-hover:bg-[#A68B5C]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                            <Icon name="ZoomIn" size={20} className="text-white drop-shadow-lg" />
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     </section>
+
+                    {/* Lightbox Modal */}
+                    {lightboxIndex !== null && (
+                        <div
+                            className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center print:hidden"
+                            onClick={() => setLightboxIndex(null)}
+                        >
+                            {/* Close button */}
+                            <button
+                                onClick={() => setLightboxIndex(null)}
+                                className="absolute top-4 right-4 z-10 text-white/70 hover:text-white p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                            >
+                                <Icon name="X" size={24} />
+                            </button>
+
+                            {/* Page indicator */}
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/80 text-sm font-medium bg-white/10 px-4 py-1.5 rounded-full backdrop-blur-sm">
+                                {lightboxIndex + 1} / {images.length}
+                            </div>
+
+                            {/* Previous button */}
+                            {lightboxIndex > 0 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
+                                    className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                >
+                                    <Icon name="ChevronLeft" size={28} />
+                                </button>
+                            )}
+
+                            {/* Next button */}
+                            {lightboxIndex < images.length - 1 && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
+                                    className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                >
+                                    <Icon name="ChevronRight" size={28} />
+                                </button>
+                            )}
+
+                            {/* Image */}
+                            <div
+                                className="max-w-[90vw] max-h-[85vh] overflow-auto"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <img
+                                    src={images[lightboxIndex]}
+                                    alt={`문제 ${lightboxIndex + 1}`}
+                                    className={`max-w-full h-auto object-contain ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
+                                    style={{ maxHeight: '85vh' }}
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div >

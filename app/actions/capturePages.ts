@@ -1,5 +1,6 @@
 'use server';
 
+import puppeteer from 'puppeteer';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -26,55 +27,23 @@ export async function capturePages(url: string): Promise<CaptureResult> {
         return { ...empty, error: '유효한 URL을 입력해주세요.' };
     }
 
-    // Use /tmp for serverless, os.tmpdir() for local
     const captureId = `cap_${Date.now()}`;
     const captureDir = path.join(os.tmpdir(), 'captures', captureId);
     fs.mkdirSync(captureDir, { recursive: true });
 
     let browser;
     try {
-        // Dynamic import to handle different environments
-        let puppeteer: typeof import('puppeteer-core');
-        let executablePath: string;
-        let args: string[];
-
-        try {
-            // Try serverless chromium first (Firebase/Cloud Run)
-            const chromium = await import('@sparticuz/chromium');
-            puppeteer = await import('puppeteer-core');
-            executablePath = await chromium.default.executablePath() || '';
-            args = chromium.default.args;
-        } catch {
-            // Fallback: try regular puppeteer (local dev)
-            try {
-                const pup = await import('puppeteer');
-                const launched = await pup.default.launch({
-                    headless: true,
-                    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-                });
-                browser = launched;
-                puppeteer = null as never; // skip the launch below
-                executablePath = '';
-                args = [];
-            } catch {
-                // Last resort: puppeteer-core with system Chrome
-                puppeteer = await import('puppeteer-core');
-                executablePath = process.env.CHROME_PATH ||
-                    (process.platform === 'win32'
-                        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-                        : '/usr/bin/google-chrome');
-                args = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
-            }
-        }
-
-        if (!browser) {
-            browser = await puppeteer.default.launch({
-                args,
-                defaultViewport: null,
-                executablePath,
-                headless: true,
-            });
-        }
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process',
+                '--no-zygote',
+            ],
+        });
 
         const page = await browser.newPage();
         await page.setViewport({ width: 1280, height: 5000 });

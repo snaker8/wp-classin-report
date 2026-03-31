@@ -10,7 +10,7 @@ const nextConfig = {
     serverActions: {
         bodySizeLimit: '100mb',
     },
-    serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium'],
+    serverExternalPackages: ['puppeteer'],
     webpack: (config, { dev, isServer }) => {
         // Obfuscation removed due to build errors and deployment issues.
         return config;

@@ -19,21 +19,29 @@ export interface CaptureResult {
 const MIN_OVERLAY_SIZE = 2000;
 
 async function launchBrowser() {
-    // Try @sparticuz/chromium first (serverless)
-    try {
-        const execPath = await chromium.executablePath();
-        if (execPath) {
+    const isServerless = process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.GCLOUD_PROJECT;
+
+    if (isServerless) {
+        // Firebase Cloud Run: use @sparticuz/chromium with explicit bin path
+        // /workspace is the Cloud Run working directory
+        const binDir = '/workspace/node_modules/@sparticuz/chromium/bin';
+        console.log(`Serverless detected. Chromium bin dir: ${binDir}, exists: ${fs.existsSync(binDir)}`);
+
+        try {
+            const execPath = await chromium.executablePath(binDir);
+            console.log(`Chromium executablePath: ${execPath}`);
             return await puppeteerCore.launch({
                 args: chromium.args,
                 executablePath: execPath,
                 headless: true,
             });
+        } catch (e) {
+            console.error('Chromium launch failed:', e);
+            throw e;
         }
-    } catch (e) {
-        console.log('sparticuz/chromium failed, trying fallback:', e);
     }
 
-    // Fallback: local system Chrome
+    // Local dev: use system Chrome
     const localChrome = process.platform === 'win32'
         ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
         : '/usr/bin/google-chrome';

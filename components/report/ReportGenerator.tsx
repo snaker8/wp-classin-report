@@ -59,7 +59,7 @@ export default function ReportGenerator() {
     const [captureUrl, setCaptureUrl] = useState('');
     const [isCapturing, setIsCapturing] = useState(false);
     const [captureProgress, setCaptureProgress] = useState('');
-    const [captureImagePaths, setCaptureImagePaths] = useState<string[]>([]);
+    const [captureId, setCaptureId] = useState<string>('');
 
     // Set Teacher Name from User Data
     useEffect(() => {
@@ -149,7 +149,7 @@ export default function ReportGenerator() {
                 return;
             }
 
-            if (result.imagePaths.length === 0) {
+            if (result.filteredCount === 0 && result.totalPages === 0) {
                 setError('캡처된 이미지가 없습니다. URL을 확인해주세요.');
                 return;
             }
@@ -159,36 +159,24 @@ export default function ReportGenerator() {
             if (result.className && !className) setClassName(result.className);
             if (result.materialName && !courseName) setCourseName(result.materialName);
 
-            setCaptureProgress(`이미지 로딩 중... (${result.imagePaths.length}장)`);
+            // Store captureId - images stay on server, no need to download to client
+            setCaptureId(result.captureId);
 
-            // Fetch images from public paths and convert to File attachments
-            const newAttachments: Attachment[] = [];
-            for (let i = 0; i < result.imagePaths.length; i++) {
-                try {
-                    const response = await fetch(result.imagePaths[i]);
-                    const blob = await response.blob();
-                    const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
-
-                    const preview = await new Promise<string>((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result as string);
-                        reader.readAsDataURL(blob);
-                    });
-
-                    newAttachments.push({
-                        id: Math.random().toString(36).substring(7),
-                        file,
-                        type: 'image' as const,
-                        preview,
-                        objectUrl: URL.createObjectURL(blob),
-                    });
-                } catch (e) {
-                    console.warn(`Failed to load captured image ${i + 1}:`, e);
-                }
+            // Create placeholder attachments for preview (just show count)
+            const placeholderAttachments: Attachment[] = [];
+            for (let i = 0; i < result.filteredCount; i++) {
+                const blob = new Blob([''], { type: 'image/jpeg' });
+                const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
+                placeholderAttachments.push({
+                    id: Math.random().toString(36).substring(7),
+                    file,
+                    type: 'image' as const,
+                    preview: '',
+                    objectUrl: '',
+                });
             }
 
-            setAttachments(prev => [...prev, ...newAttachments]);
-            setCaptureImagePaths(result.imagePaths); // Store paths for server-side reading
+            setAttachments(prev => [...prev, ...placeholderAttachments]);
             setReportData(null);
             setCaptureProgress(`캡처 완료! ${result.totalPages}페이지 중 풀이 ${result.filteredCount}페이지 추출`);
             setCaptureUrl('');
@@ -252,7 +240,7 @@ export default function ReportGenerator() {
 
 
     const handleGenerateReport = async () => {
-        if (!studentName || attachments.length === 0) {
+        if (!studentName || (attachments.length === 0 && !captureId)) {
             setError('학생 이름과 최소 하나의 자료(이미지/PDF)가 필요합니다.');
             return;
         }
@@ -261,9 +249,8 @@ export default function ReportGenerator() {
         setError(null);
 
         try {
-            // If we have capture paths, use server-side file reading (bypass body limit)
-            // Only process non-captured attachments as base64
-            const hasCaptureImages = captureImagePaths.length > 0;
+            // If we have captureId, images are on server - only process manual uploads as base64
+            const hasCaptureImages = !!captureId;
 
             const manualAttachments = hasCaptureImages
                 ? attachments.filter(a => !a.file.name.startsWith('capture_page_'))
@@ -299,7 +286,7 @@ export default function ReportGenerator() {
                 className,
                 courseName,
                 attachments: processedAttachments,
-                captureImagePaths: hasCaptureImages ? captureImagePaths : undefined,
+                captureId: hasCaptureImages ? captureId : undefined,
                 model: 'flash',
                 aiStyle,
                 customInstructions,
@@ -416,7 +403,7 @@ export default function ReportGenerator() {
         setClassName('');
         setCourseName('');
         setAttachments([]);
-        setCaptureImagePaths([]);
+        setCaptureId('');
         setCaptureProgress('');
         setReportData(null);
         setError(null);

@@ -1,18 +1,16 @@
 'use server';
 
-import puppeteerCore from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 export interface CaptureResult {
-    imagePaths: string[];   // public URL paths to captured images (filtered)
+    captureId: string;
     studentName: string;
     className: string;
     materialName: string;
     totalPages: number;
     filteredCount: number;
-    captureId: string;
     error?: string;
 }
 
@@ -20,34 +18,63 @@ const MIN_OVERLAY_SIZE = 2000;
 
 export async function capturePages(url: string): Promise<CaptureResult> {
     const empty: CaptureResult = {
-        imagePaths: [], studentName: '', className: '', materialName: '',
-        totalPages: 0, filteredCount: 0, captureId: '',
+        captureId: '', studentName: '', className: '', materialName: '',
+        totalPages: 0, filteredCount: 0,
     };
 
     if (!url || !url.startsWith('http')) {
         return { ...empty, error: '유효한 URL을 입력해주세요.' };
     }
 
-    // Create temp directory in public for serving images
+    // Use /tmp for serverless, os.tmpdir() for local
     const captureId = `cap_${Date.now()}`;
-    const captureDir = path.join(process.cwd(), 'public', 'tmp-captures', captureId);
+    const captureDir = path.join(os.tmpdir(), 'captures', captureId);
     fs.mkdirSync(captureDir, { recursive: true });
 
     let browser;
     try {
-        // Use @sparticuz/chromium for serverless (Firebase), fallback to local Chrome for dev
-        const executablePath = await chromium.executablePath() ||
-            process.env.CHROME_PATH ||
-            (process.platform === 'win32'
-                ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-                : '/usr/bin/google-chrome');
+        // Dynamic import to handle different environments
+        let puppeteer: typeof import('puppeteer-core');
+        let executablePath: string;
+        let args: string[];
 
-        browser = await puppeteerCore.launch({
-            args: chromium.args,
-            defaultViewport: null,
-            executablePath,
-            headless: true,
-        });
+        try {
+            // Try serverless chromium first (Firebase/Cloud Run)
+            const chromium = await import('@sparticuz/chromium');
+            puppeteer = await import('puppeteer-core');
+            executablePath = await chromium.default.executablePath() || '';
+            args = chromium.default.args;
+        } catch {
+            // Fallback: try regular puppeteer (local dev)
+            try {
+                const pup = await import('puppeteer');
+                const launched = await pup.default.launch({
+                    headless: true,
+                    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+                });
+                browser = launched;
+                puppeteer = null as never; // skip the launch below
+                executablePath = '';
+                args = [];
+            } catch {
+                // Last resort: puppeteer-core with system Chrome
+                puppeteer = await import('puppeteer-core');
+                executablePath = process.env.CHROME_PATH ||
+                    (process.platform === 'win32'
+                        ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+                        : '/usr/bin/google-chrome');
+                args = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
+            }
+        }
+
+        if (!browser) {
+            browser = await puppeteer.default.launch({
+                args,
+                defaultViewport: null,
+                executablePath,
+                headless: true,
+            });
+        }
 
         const page = await browser.newPage();
         await page.setViewport({ width: 1280, height: 5000 });
@@ -75,13 +102,13 @@ export async function capturePages(url: string): Promise<CaptureResult> {
         });
 
         const totalPages = info.pageTotal || 30;
-        const allFilePaths: string[] = [];
         const overlayLengths: number[] = [];
+        let savedCount = 0;
 
         for (let i = 0; i < totalPages; i++) {
             await new Promise(r => setTimeout(r, 1200));
 
-            // Wait for images to fully load
+            // Wait for images to load
             await page.evaluate(() => {
                 return new Promise<void>((resolve) => {
                     const imgs = Array.from(document.querySelectorAll('img'));
@@ -115,7 +142,6 @@ export async function capturePages(url: string): Promise<CaptureResult> {
                     return r.width > 300 && r.height > 200;
                 });
                 if (large.length === 0) return document.body;
-
                 let container = large[0].parentElement;
                 while (container && container !== document.body) {
                     const contained = Array.from(container.querySelectorAll('img')).filter(img => {
@@ -131,30 +157,15 @@ export async function capturePages(url: string): Promise<CaptureResult> {
 
             await new Promise(r => setTimeout(r, 500));
 
-            const fileName = `page_${i + 1}.jpg`;
-            const filePath = path.join(captureDir, fileName);
-            const publicPath = `/tmp-captures/${captureId}/${fileName}`;
+            const filePath = path.join(captureDir, `page_${i + 1}.jpg`);
 
             try {
-                await containerHandle.screenshot({
-                    path: filePath, type: 'jpeg', quality: 92,
-                });
-                allFilePaths.push(publicPath);
+                await containerHandle.screenshot({ path: filePath, type: 'jpeg', quality: 92 });
+                savedCount++;
             } catch {
-                // Fallback: viewport screenshot
-                await page.evaluate(() => {
-                    const imgs = Array.from(document.querySelectorAll('img'));
-                    let best: Element | null = null, maxA = 0;
-                    for (const img of imgs) {
-                        const r = img.getBoundingClientRect();
-                        if (r.width * r.height > maxA) { maxA = r.width * r.height; best = img; }
-                    }
-                    if (best) best.scrollIntoView({ block: 'start' });
-                });
-                await new Promise(r => setTimeout(r, 300));
                 try {
                     await page.screenshot({ path: filePath, type: 'jpeg', quality: 92, fullPage: false });
-                    allFilePaths.push(publicPath);
+                    savedCount++;
                 } catch {
                     // skip
                 }
@@ -180,46 +191,48 @@ export async function capturePages(url: string): Promise<CaptureResult> {
 
         await browser.close();
 
-        // Filter: only pages with student handwriting
-        const filteredPaths: string[] = [];
-        for (let i = 0; i < allFilePaths.length; i++) {
+        // Filter: only keep pages with student handwriting
+        const allFiles = fs.readdirSync(captureDir).sort();
+        const filteredFiles: string[] = [];
+        for (let i = 0; i < allFiles.length; i++) {
             if (overlayLengths[i] >= MIN_OVERLAY_SIZE) {
-                filteredPaths.push(allFilePaths[i]);
+                filteredFiles.push(allFiles[i]);
+            }
+        }
+        // Remove non-filtered files, keep filtered ones
+        const keepFiles = filteredFiles.length > 0 ? filteredFiles : allFiles;
+        for (const f of allFiles) {
+            if (!keepFiles.includes(f)) {
+                fs.unlinkSync(path.join(captureDir, f));
             }
         }
 
-        const imagePaths = filteredPaths.length > 0 ? filteredPaths : allFilePaths;
-
-        console.log(`Capture done: ${allFilePaths.length} total, ${filteredPaths.length} with student work`);
+        console.log(`Capture done: ${savedCount} total, ${filteredFiles.length} with student work, saved to ${captureDir}`);
 
         return {
-            imagePaths,
+            captureId,
             studentName: info.studentName,
             className: info.className,
             materialName: info.materialName,
-            totalPages: allFilePaths.length,
-            filteredCount: filteredPaths.length,
-            captureId,
+            totalPages: savedCount,
+            filteredCount: filteredFiles.length > 0 ? filteredFiles.length : savedCount,
         };
 
     } catch (err) {
         if (browser) await browser.close();
         console.error('Capture error:', err);
-        return { ...empty, error: err instanceof Error ? err.message : '페이지 캡처 중 오류가 발생했습니다.' };
+        return { ...empty, error: err instanceof Error ? `${err.message}` : '페이지 캡처 중 오류가 발생했습니다.' };
     }
 }
 
-// Cleanup old capture directories (call periodically)
-export async function cleanupCaptures() {
-    const capturesDir = path.join(process.cwd(), 'public', 'tmp-captures');
-    if (!fs.existsSync(capturesDir)) return;
+// Read captured images from /tmp as base64 (used by generateReport)
+export async function getCaptureImages(captureId: string): Promise<string[]> {
+    const captureDir = path.join(os.tmpdir(), 'captures', captureId);
+    if (!fs.existsSync(captureDir)) return [];
 
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    const entries = fs.readdirSync(capturesDir);
-    for (const entry of entries) {
-        const match = entry.match(/^cap_(\d+)$/);
-        if (match && parseInt(match[1]) < oneHourAgo) {
-            fs.rmSync(path.join(capturesDir, entry), { recursive: true, force: true });
-        }
-    }
+    const files = fs.readdirSync(captureDir).filter(f => f.endsWith('.jpg')).sort();
+    return files.map(f => {
+        const buffer = fs.readFileSync(path.join(captureDir, f));
+        return buffer.toString('base64');
+    });
 }

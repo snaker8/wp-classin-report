@@ -1,7 +1,6 @@
 'use server';
 
-import fs from 'fs';
-import path from 'path';
+import { getCaptureImages } from './capturePages';
 
 
 
@@ -80,7 +79,7 @@ export async function generateReport(data: {
     className: string,
     courseName: string,
     attachments: { type: 'image' | 'pdf', base64: string }[],
-    captureImagePaths?: string[],  // server-side file paths from URL capture
+    captureId?: string,  // ID to load captured images from /tmp
     model?: 'pro' | 'flash',
     aiStyle?: string,
     customInstructions?: string,
@@ -135,24 +134,21 @@ export async function generateReport(data: {
         });
     }
 
-    // Add images from server-side file paths (URL capture - bypasses body size limit)
-    if (data.captureImagePaths && data.captureImagePaths.length > 0) {
-        for (const imgPath of data.captureImagePaths) {
-            try {
-                const fullPath = path.join(process.cwd(), 'public', imgPath);
-                if (fs.existsSync(fullPath)) {
-                    const imageBuffer = fs.readFileSync(fullPath);
-                    const base64Data = imageBuffer.toString('base64');
-                    parts.push({
-                        inlineData: {
-                            mimeType: 'image/jpeg',
-                            data: base64Data
-                        }
-                    });
-                }
-            } catch (e) {
-                console.warn(`Failed to read capture image: ${imgPath}`, e);
+    // Add images from server-side /tmp captures (URL capture - bypasses body size limit)
+    if (data.captureId) {
+        try {
+            const captureImages = await getCaptureImages(data.captureId);
+            for (const base64Data of captureImages) {
+                parts.push({
+                    inlineData: {
+                        mimeType: 'image/jpeg',
+                        data: base64Data
+                    }
+                });
             }
+            console.log(`Loaded ${captureImages.length} capture images from ${data.captureId}`);
+        } catch (e) {
+            console.warn('Failed to load capture images:', e);
         }
     }
 

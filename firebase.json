@@ -8,7 +8,9 @@
       "**/node_modules/**"
     ],
     "frameworksBackend": {
-      "region": "asia-northeast3"
+      "region": "asia-northeast3",
+      "memory": "1GiB",
+      "timeoutSeconds": 300
     }
   },
   "firestore": {

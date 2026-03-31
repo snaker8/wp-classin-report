@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:class.orzo.kr)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const p = require\\(''puppeteer''\\); console.log\\(''puppeteer ok''\\)\")",
+      "Bash(node scripts/test-capture.js)",
+      "Bash(node scripts/test-analyze.js)",
+      "Bash(npx next:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3001\")",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe //c \"taskkill /PID 28024 /F\")",
+      "Bash(cmd.exe //c \"taskkill /PID 34312 /F\")",
+      "Bash(cmd.exe //c \"taskkill /PID 22468 /F\")",
+      "Bash(firebase deploy:*)",
+      "Bash(node -e \"const p = require\\(''puppeteer''\\); console.log\\(p.executablePath\\(\\)\\)\")",
+      "Bash(npx puppeteer:*)",
+      "Bash(PUPPETEER_CACHE_DIR=\"node_modules/.cache/puppeteer\" npx puppeteer browsers install chrome --platform linux)",
+      "Bash(npm uninstall:*)",
+      "Read(//c/과사만 프로젝트/**)",
+      "Bash(gcloud functions:*)",
+      "Bash(gcloud logging:*)",
+      "Bash(firebase functions:log --only ssrwpclassinreport)"
+    ]
+  }
+}

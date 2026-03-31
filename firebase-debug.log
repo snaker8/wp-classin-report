@@ -1,0 +1,101 @@
+[debug] [2026-03-31T14:09:44.552Z] ----------------------------------------------------------------------
+[debug] [2026-03-31T14:09:44.554Z] Command:       C:\nvm4w\nodejs\node.exe C:\Users\임세현\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-03-31T14:09:44.554Z] CLI Version:   15.9.1
+[debug] [2026-03-31T14:09:44.554Z] Platform:      win32
+[debug] [2026-03-31T14:09:44.554Z] Node Version:  v24.14.0
+[debug] [2026-03-31T14:09:44.554Z] Time:          Tue Mar 31 2026 23:09:44 GMT+0900 (한국 표준시)
+[debug] [2026-03-31T14:09:44.554Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-31T14:09:45.452Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-31T14:09:45.452Z] > authorizing via signed-in user (limjoongil@gmail.com)
+[debug] [2026-03-31T14:09:45.452Z] [iam] checking project wp-classin-report for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-03-31T14:09:45.453Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:45.453Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:45.454Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/wp-classin-report:testIamPermissions [none]
+[debug] [2026-03-31T14:09:45.454Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/wp-classin-report:testIamPermissions  x-goog-user-project=wp-classin-report
+[debug] [2026-03-31T14:09:45.454Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/wp-classin-report:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-03-31T14:09:45.896Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/wp-classin-report:testIamPermissions 200
+[debug] [2026-03-31T14:09:45.896Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/wp-classin-report:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-03-31T14:09:45.897Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:45.897Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:45.897Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/wp-classin-report [none]
+[debug] [2026-03-31T14:09:46.420Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/wp-classin-report 200
+[debug] [2026-03-31T14:09:46.420Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/wp-classin-report {"projectId":"wp-classin-report","projectNumber":"614085553479","displayName":"wp-classin report","name":"projects/wp-classin-report","resources":{"hostingSite":"wp-classin-report"},"state":"ACTIVE","etag":"1_b20ed009-b461-48d7-805e-aff1c3c7f391"}
+[debug] [2026-03-31T14:09:47.915Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:47.915Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:47.915Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites pageToken=&pageSize=10
+[debug] [2026-03-31T14:09:48.829Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites 200
+[debug] [2026-03-31T14:09:48.829Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites {"sites":[{"name":"projects/wp-classin-report/sites/wp-classin-report","defaultUrl":"https://wp-classin-report.web.app","appId":"1:614085553479:web:6777007985ba34e86cb062","type":"DEFAULT_SITE"}]}
+[debug] [2026-03-31T14:09:48.829Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:48.829Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:48.830Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:614085553479:web:6777007985ba34e86cb062/config [none]
+[debug] [2026-03-31T14:09:49.926Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:614085553479:web:6777007985ba34e86cb062/config 200
+[debug] [2026-03-31T14:09:49.926Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/-/webApps/1:614085553479:web:6777007985ba34e86cb062/config {"projectId":"wp-classin-report","appId":"1:614085553479:web:6777007985ba34e86cb062","storageBucket":"wp-classin-report.firebasestorage.app","apiKey":"AIzaSyBIprMCSvn4vks4wHUoJcD9khJPQIq9i84","authDomain":"wp-classin-report.firebaseapp.com","messagingSenderId":"614085553479","measurementId":"G-838HTG3WKR","projectNumber":"614085553479","version":"2"}
+[info] 
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[debug] [2026-03-31T14:09:53.649Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:53.650Z] Checked if tokens are valid: true, expires at: 1774969051864
+[debug] [2026-03-31T14:09:53.650Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites/wp-classin-report [none]
+[debug] [2026-03-31T14:09:54.174Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites/wp-classin-report 200
+[debug] [2026-03-31T14:09:54.174Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/wp-classin-report/sites/wp-classin-report {"name":"projects/wp-classin-report/sites/wp-classin-report","defaultUrl":"https://wp-classin-report.web.app","appId":"1:614085553479:web:6777007985ba34e86cb062","type":"DEFAULT_SITE"}
+[info]   ▲ Next.js 14.2.9
+  - Environments: .env.local
+
+
+[info]    Creating an optimized production build ...
+
+[info] Failed to compile.
+
+./app/actions/capturePages.ts
+Error: 
+  x Only async functions are allowed to be exported in a "use server" file.
+   ,-[C:\과사람 프로젝트\classin-ai-report\app\actions\capturePages.ts:1:1]
+ 1 | 'use server';
+ 2 | 
+ 3 | // Allow up to 5 minutes for page capture
+ 4 | export const maxDuration = 300;
+   : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 5 | 
+ 6 | import puppeteerCore from 'puppeteer-core';
+ 7 | import chromium from '@sparticuz/chromium';
+   `----
+
+Import trace for requested module:
+./app/actions/capturePages.ts
+./components/report/ReportGenerator.tsx
+./app/page.tsx
+
+./app/actions/capturePages.ts
+Error: 
+  x Only async functions are allowed to be exported in a "use server" file.
+   ,-[C:\과사람 프로젝트\classin-ai-report\app\actions\capturePages.ts:1:1]
+ 1 | 'use server';
+ 2 | 
+ 3 | // Allow up to 5 minutes for page capture
+ 4 | export const maxDuration = 300;
+   : ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 5 | 
+ 6 | import puppeteerCore from 'puppeteer-core';
+ 7 | import chromium from '@sparticuz/chromium';
+   `----
+
+Import trace for requested module:
+./app/actions/capturePages.ts
+./app/actions/generateReport.ts
+
+[info] 
+
+[info] 
+> Build failed because of webpack errors
+
+[debug] [2026-03-31T14:09:57.427Z] Error: ENOENT: no such file or directory, open 'C:\과사람 프로젝트\classin-ai-report\.next\server\middleware-manifest.json'
+[error] 
+[error] Error: An unexpected error has occurred.

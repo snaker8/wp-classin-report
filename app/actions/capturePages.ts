@@ -1,8 +1,5 @@
 'use server';
 
-// Allow up to 5 minutes for page capture
-export const maxDuration = 300;
-
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import fs from 'fs';
@@ -78,7 +75,7 @@ export async function capturePages(url: string): Promise<CaptureResult> {
         await page.setViewport({ width: 1280, height: 5000 });
 
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 2500));
 
         // Extract student info & total page count
         const info = await page.evaluate(() => {
@@ -104,7 +101,7 @@ export async function capturePages(url: string): Promise<CaptureResult> {
         let savedCount = 0;
 
         for (let i = 0; i < totalPages; i++) {
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, 600));
 
             // Wait for images to load
             await page.evaluate(() => {
@@ -153,7 +150,7 @@ export async function capturePages(url: string): Promise<CaptureResult> {
                 return container || large[0];
             });
 
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 300));
 
             const filePath = path.join(captureDir, `page_${i + 1}.jpg`);
 

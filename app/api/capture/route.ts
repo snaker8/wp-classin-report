@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import os from 'os';
+import fs from 'fs';
 import path from 'path';
 
 export const maxDuration = 300;
@@ -8,19 +10,10 @@ export const dynamic = 'force-dynamic';
 
 const MIN_OVERLAY_SIZE = 2000;
 
-function getCaptureDir(captureId: string) {
-    return path.join(os.tmpdir(), 'captures', captureId);
+async function updateStatus(captureId: string, data: Record<string, unknown>) {
+    await updateDoc(doc(db, 'captures', captureId), data);
 }
 
-function getStatusPath(captureId: string) {
-    return path.join(getCaptureDir(captureId), '_status.json');
-}
-
-function writeStatus(captureId: string, data: Record<string, unknown>) {
-    fs.writeFileSync(getStatusPath(captureId), JSON.stringify(data));
-}
-
-// POST /api/capture - runs the full capture (called internally by server action)
 export async function POST(req: NextRequest) {
     const { url, captureId } = await req.json();
 
@@ -28,13 +21,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Missing url or captureId' }, { status: 400 });
     }
 
-    const captureDir = getCaptureDir(captureId);
-    if (!fs.existsSync(captureDir)) {
-        fs.mkdirSync(captureDir, { recursive: true });
-    }
+    const captureDir = path.join(os.tmpdir(), 'captures', captureId);
+    fs.mkdirSync(captureDir, { recursive: true });
 
     try {
-        writeStatus(captureId, { status: 'capturing', progress: '브라우저 시작 중...' });
+        await updateStatus(captureId, { status: 'capturing', progress: '브라우저 시작 중...' });
 
         const puppeteerCore = await import('puppeteer-core');
         const isServerless = process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.GCLOUD_PROJECT;
@@ -64,7 +55,7 @@ export async function POST(req: NextRequest) {
             const page = await browser.newPage();
             await page.setViewport({ width: 1280, height: 5000 });
 
-            writeStatus(captureId, { status: 'capturing', progress: '페이지 로딩 중...' });
+            await updateStatus(captureId, { status: 'capturing', progress: '페이지 로딩 중...' });
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await page.waitForSelector('img', { timeout: 30000 }).catch(() => {});
             await new Promise(r => setTimeout(r, 2000));
@@ -89,10 +80,10 @@ export async function POST(req: NextRequest) {
 
             const totalPages = info.pageTotal || 30;
             const overlayLengths: number[] = [];
-            let savedCount = 0;
+            const capturedBase64: string[] = [];
 
             for (let i = 0; i < totalPages; i++) {
-                writeStatus(captureId, { status: 'capturing', progress: `캡처 중... ${i + 1}/${totalPages}` });
+                await updateStatus(captureId, { status: 'capturing', progress: `캡처 중... ${i + 1}/${totalPages}` });
                 await new Promise(r => setTimeout(r, 500));
 
                 await page.evaluate(() => {
@@ -140,15 +131,14 @@ export async function POST(req: NextRequest) {
                 });
 
                 await new Promise(r => setTimeout(r, 200));
-                const filePath = path.join(captureDir, `page_${String(i + 1).padStart(3, '0')}.jpg`);
 
                 try {
-                    await containerHandle.screenshot({ path: filePath, type: 'jpeg', quality: 92 });
-                    savedCount++;
+                    const screenshot = await containerHandle.screenshot({ encoding: 'base64', type: 'jpeg', quality: 85 });
+                    capturedBase64.push(screenshot as string);
                 } catch {
                     try {
-                        await page.screenshot({ path: filePath, type: 'jpeg', quality: 92, fullPage: false });
-                        savedCount++;
+                        const ss = await page.screenshot({ encoding: 'base64', type: 'jpeg', quality: 85, fullPage: false });
+                        capturedBase64.push(ss as string);
                     } catch { /* skip */ }
                 }
 
@@ -171,31 +161,28 @@ export async function POST(req: NextRequest) {
 
             await browser.close();
 
-            const allFiles = fs.readdirSync(captureDir).filter(f => f.endsWith('.jpg')).sort();
-            const filteredFiles: string[] = [];
-            for (let i = 0; i < allFiles.length; i++) {
+            // Filter: only keep pages with student handwriting
+            const filteredImages: string[] = [];
+            for (let i = 0; i < capturedBase64.length; i++) {
                 if (overlayLengths[i] >= MIN_OVERLAY_SIZE) {
-                    filteredFiles.push(allFiles[i]);
+                    filteredImages.push(capturedBase64[i]);
                 }
             }
-            const keepFiles = filteredFiles.length > 0 ? filteredFiles : allFiles;
-            for (const f of allFiles) {
-                if (!keepFiles.includes(f)) {
-                    fs.unlinkSync(path.join(captureDir, f));
-                }
-            }
+            const finalImages = filteredImages.length > 0 ? filteredImages : capturedBase64;
 
-            console.log(`Capture done: ${savedCount} total, ${filteredFiles.length} with student work`);
+            console.log(`Capture done: ${capturedBase64.length} total, ${filteredImages.length} with student work`);
 
-            writeStatus(captureId, {
+            await updateStatus(captureId, {
                 status: 'done',
+                progress: '완료',
+                images: finalImages,
                 result: {
                     captureId,
                     studentName: info.studentName,
                     className: info.className,
                     materialName: info.materialName,
-                    totalPages: savedCount,
-                    filteredCount: filteredFiles.length > 0 ? filteredFiles.length : savedCount,
+                    totalPages: capturedBase64.length,
+                    filteredCount: filteredImages.length > 0 ? filteredImages.length : capturedBase64.length,
                 }
             });
 
@@ -206,7 +193,7 @@ export async function POST(req: NextRequest) {
 
     } catch (err) {
         console.error('Capture error:', err);
-        writeStatus(captureId, {
+        await updateStatus(captureId, {
             status: 'error',
             error: err instanceof Error ? err.message : '캡처 실패',
         });

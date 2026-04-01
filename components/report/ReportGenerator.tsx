@@ -450,6 +450,7 @@ export default function ReportGenerator() {
                         reportData: parsedData,
                         htmlReportUrl: htmlUrl,
                         imageUrl: '',
+                        captureId: captureId || '',
                         teacherId: user.uid,
                         teacherName: teacherName || userData?.displayName || user.displayName || 'Unknown',
                         centerName: centerName,

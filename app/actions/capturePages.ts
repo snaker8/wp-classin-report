@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/lib/firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
 
 export interface CaptureResult {
     captureId: string;
@@ -63,13 +63,13 @@ export async function checkCapture(captureId: string): Promise<CaptureStatus> {
     }
 }
 
-// Read captured images from Firestore (used by generateReport)
+// Read captured images from Firestore sub-collection (used by generateReport)
 export async function getCaptureImages(captureId: string): Promise<string[]> {
     try {
-        const snap = await getDoc(doc(db, 'captures', captureId));
-        if (!snap.exists()) return [];
-        const data = snap.data();
-        return data.images || [];
+        const imagesRef = collection(db, 'captures', captureId, 'images');
+        const q = query(imagesRef, orderBy('page'));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data().base64 as string);
     } catch {
         return [];
     }

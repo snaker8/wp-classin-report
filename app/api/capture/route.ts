@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -172,10 +172,18 @@ export async function POST(req: NextRequest) {
 
             console.log(`Capture done: ${capturedBase64.length} total, ${filteredImages.length} with student work`);
 
+            // Store images in sub-collection (each image as separate doc to avoid 1MB limit)
+            for (let i = 0; i < finalImages.length; i++) {
+                await setDoc(doc(db, 'captures', captureId, 'images', String(i)), {
+                    base64: finalImages[i],
+                    page: i + 1,
+                });
+            }
+
             await updateStatus(captureId, {
                 status: 'done',
                 progress: '완료',
-                images: finalImages,
+                imageCount: finalImages.length,
                 result: {
                     captureId,
                     studentName: info.studentName,

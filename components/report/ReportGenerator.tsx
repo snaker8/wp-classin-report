@@ -361,7 +361,23 @@ export default function ReportGenerator() {
                     // Use captureViewImages if available, otherwise read from attachment files
                     let base64Images: string[];
                     if (captureViewImages.length > 0) {
-                        base64Images = captureViewImages; // Already data:image/jpeg;base64,... format
+                        // Compress captured images for HTML report (reduce size)
+                        base64Images = await Promise.all(captureViewImages.map(dataUrl => {
+                            return new Promise<string>((resolve) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    const canvas = document.createElement('canvas');
+                                    const MAX_W = 800;
+                                    const scale = Math.min(1, MAX_W / img.width);
+                                    canvas.width = Math.round(img.width * scale);
+                                    canvas.height = Math.round(img.height * scale);
+                                    const ctx = canvas.getContext('2d');
+                                    if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                    resolve(canvas.toDataURL('image/jpeg', 0.6));
+                                };
+                                img.src = dataUrl;
+                            });
+                        }));
                     } else {
                         base64Images = await Promise.all(attachments.map(async (attachment) => {
                             return await new Promise<string>((resolve) => {

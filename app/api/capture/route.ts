@@ -36,7 +36,14 @@ export async function POST(req: NextRequest) {
             const binDir = '/workspace/node_modules/@sparticuz/chromium/bin';
             const execPath = await chromium.default.executablePath(binDir);
             browser = await puppeteerCore.default.launch({
-                args: chromium.default.args,
+                args: [
+                    ...chromium.default.args,
+                    '--disable-features=AudioServiceOutOfProcess',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--single-process',
+                    '--no-zygote',
+                ],
                 executablePath: execPath,
                 headless: true,
             });

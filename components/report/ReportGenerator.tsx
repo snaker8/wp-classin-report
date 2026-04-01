@@ -8,8 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
-// capturePages server actions are no longer used directly
-// Using API route /api/capture instead for long-running captures
+import { startCapture, checkCapture } from '@/app/actions/capturePages';
 import CameraCapture from '@/components/ui/CameraCapture';
 
 interface Attachment {
@@ -133,7 +132,7 @@ export default function ReportGenerator() {
         await processFiles([file]);
     };
 
-    // URL Capture Handler - uses API route with streaming + polling
+    // URL Capture Handler - fire-and-forget + polling via server actions
     const handleUrlCapture = async () => {
         if (!captureUrl.trim()) return;
 
@@ -142,40 +141,16 @@ export default function ReportGenerator() {
         setError(null);
 
         try {
-            // Step 1: Start capture via API route (streaming response)
-            const startRes = await fetch('/api/capture', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: captureUrl.trim() }),
-            });
+            // Step 1: Start capture - fire and forget (don't await completion)
+            const { captureId: newCaptureId, error: startError } = await startCapture(captureUrl.trim());
 
-            if (!startRes.ok) {
-                const err = await startRes.json();
-                setError(`캡처 실패: ${err.error || '서버 오류'}`);
+            if (startError || !newCaptureId) {
+                setError(`캡처 실패: ${startError || '알 수 없는 오류'}`);
                 setIsCapturing(false);
                 return;
             }
 
-            // Read the first line to get captureId
-            const reader = startRes.body?.getReader();
-            if (!reader) {
-                setError('스트림 읽기 실패');
-                setIsCapturing(false);
-                return;
-            }
-
-            const firstChunk = await reader.read();
-            const firstLine = new TextDecoder().decode(firstChunk.value).trim();
-            const { captureId: newCaptureId } = JSON.parse(firstLine);
-
-            if (!newCaptureId) {
-                setError('캡처 ID를 받지 못했습니다.');
-                setIsCapturing(false);
-                return;
-            }
-
-            // Don't await the rest of the stream - just poll status
-            reader.cancel();
+            setCaptureProgress('캡처 진행 중...');
 
             // Step 2: Poll for completion every 3 seconds
             const maxPolls = 80; // max ~4 minutes
@@ -183,8 +158,7 @@ export default function ReportGenerator() {
                 await new Promise(r => setTimeout(r, 3000));
 
                 try {
-                    const statusRes = await fetch(`/api/capture?id=${newCaptureId}`);
-                    const status = await statusRes.json();
+                    const status = await checkCapture(newCaptureId);
 
                     if (status.status === 'capturing') {
                         setCaptureProgress(status.progress || '캡처 진행 중...');
@@ -227,7 +201,7 @@ export default function ReportGenerator() {
                         return;
                     }
                 } catch {
-                    // Poll request failed, keep trying
+                    // Poll failed, keep trying
                     continue;
                 }
             }

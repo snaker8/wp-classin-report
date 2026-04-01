@@ -1,7 +1,5 @@
 'use server';
 
-import puppeteerCore from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -38,13 +36,16 @@ function writeStatus(captureId: string, status: CaptureStatus) {
 }
 
 async function launchBrowser() {
+    // Dynamic imports to avoid deployment initialization timeout
+    const puppeteerCore = await import('puppeteer-core');
     const isServerless = process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.GCLOUD_PROJECT;
 
     if (isServerless) {
+        const chromium = await import('@sparticuz/chromium');
         const binDir = '/workspace/node_modules/@sparticuz/chromium/bin';
-        const execPath = await chromium.executablePath(binDir);
-        return await puppeteerCore.launch({
-            args: chromium.args,
+        const execPath = await chromium.default.executablePath(binDir);
+        return await puppeteerCore.default.launch({
+            args: chromium.default.args,
             executablePath: execPath,
             headless: true,
         });
@@ -54,7 +55,7 @@ async function launchBrowser() {
         ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
         : '/usr/bin/google-chrome';
 
-    return await puppeteerCore.launch({
+    return await puppeteerCore.default.launch({
         executablePath: process.env.CHROME_PATH || localChrome,
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],

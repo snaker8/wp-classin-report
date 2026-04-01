@@ -14,6 +14,7 @@ export default function ReportClient({ id }: { id: string }) {
         courseName: string;
         images: string[];
         captureId?: string;
+        htmlReportUrl?: string;
     } | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -30,28 +31,13 @@ export default function ReportClient({ id }: { id: string }) {
                     const data = docSnap.data();
                     setReportData(data.reportData as ReportData);
 
-                    // Load images from various sources
                     let images: string[] = [];
 
-                    // 1. If captureId exists, load from captures sub-collection
-                    if (data.captureId) {
-                        try {
-                            const imagesRef = collection(db, 'captures', data.captureId, 'images');
-                            const q = query(imagesRef, orderBy('page'));
-                            const snap = await getDocs(q);
-                            images = snap.docs.map(d => `data:image/jpeg;base64,${d.data().base64}`);
-                        } catch (e) {
-                            console.warn('Failed to load capture images:', e);
-                        }
-                    }
-
-                    // 2. Fallback to imageUrls or imageUrl
-                    if (images.length === 0) {
-                        if (Array.isArray(data.imageUrls) && data.imageUrls.length > 0) {
-                            images = data.imageUrls;
-                        } else if (data.imageUrl) {
-                            images = [data.imageUrl];
-                        }
+                    // Try imageUrls / imageUrl first (fast, small data)
+                    if (Array.isArray(data.imageUrls) && data.imageUrls.length > 0) {
+                        images = data.imageUrls;
+                    } else if (data.imageUrl && data.imageUrl !== '') {
+                        images = [data.imageUrl];
                     }
 
                     setMetaData({
@@ -59,8 +45,24 @@ export default function ReportClient({ id }: { id: string }) {
                         className: data.className,
                         courseName: data.courseName,
                         images,
-                        captureId: data.captureId,
+                        captureId: data.captureId || '',
+                        htmlReportUrl: data.htmlReportUrl || '',
                     });
+
+                    // If captureId exists and no images yet, load from captures sub-collection (lazy)
+                    if (data.captureId && images.length === 0) {
+                        try {
+                            const imagesRef = collection(db, 'captures', data.captureId, 'images');
+                            const q = query(imagesRef, orderBy('page'));
+                            const snap = await getDocs(q);
+                            const captureImages = snap.docs.map(d => `data:image/jpeg;base64,${d.data().base64}`);
+                            if (captureImages.length > 0) {
+                                setMetaData(prev => prev ? { ...prev, images: captureImages } : prev);
+                            }
+                        } catch (e) {
+                            console.warn('Failed to load capture images:', e);
+                        }
+                    }
                 } else {
                     setError('리포트를 찾을 수 없습니다.');
                 }
@@ -96,6 +98,16 @@ export default function ReportClient({ id }: { id: string }) {
                     <p className="text-lg font-bold text-slate-800">{error}</p>
                     <p className="text-sm mt-2">존재하지 않거나 삭제된 리포트일 수 있습니다.</p>
                 </div>
+            </div>
+        );
+    }
+
+    // If no report data and no images, redirect to HTML as last resort
+    if (!reportData && metaData?.htmlReportUrl) {
+        window.location.replace(metaData.htmlReportUrl);
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <Icon name="Loader2" size={32} className="animate-spin text-slate-400" />
             </div>
         );
     }

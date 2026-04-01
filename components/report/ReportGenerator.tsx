@@ -8,7 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
-import { startCapture, checkCapture } from '@/app/actions/capturePages';
+import { startCapture, checkCapture, getCaptureImages } from '@/app/actions/capturePages';
 import CameraCapture from '@/components/ui/CameraCapture';
 
 interface Attachment {
@@ -60,6 +60,7 @@ export default function ReportGenerator() {
     const [isCapturing, setIsCapturing] = useState(false);
     const [captureProgress, setCaptureProgress] = useState('');
     const [captureId, setCaptureId] = useState<string>('');
+    const [captureViewImages, setCaptureViewImages] = useState<string[]>([]);
 
     // Set Teacher Name from User Data
     useEffect(() => {
@@ -325,6 +326,16 @@ export default function ReportGenerator() {
             }
             setReportData(parsedData);
 
+            // Load captured images from Firestore for display
+            if (captureId) {
+                try {
+                    const images = await getCaptureImages(captureId);
+                    setCaptureViewImages(images.map(b64 => `data:image/jpeg;base64,${b64}`));
+                } catch (e) {
+                    console.warn('Failed to load capture images for preview:', e);
+                }
+            }
+
             if (user) {
                 setSaving(true);
                 try {
@@ -434,6 +445,7 @@ export default function ReportGenerator() {
         setAttachments([]);
         setCaptureId('');
         setCaptureProgress('');
+        setCaptureViewImages([]);
         setReportData(null);
         setError(null);
         setIsEnhancedMode(false);
@@ -441,9 +453,10 @@ export default function ReportGenerator() {
         // Do not reset AI personalization settings to allow quick successive generations with the same settings
     };
 
-    const viewImages = attachments
-        .filter(a => a.type === 'image')
+    const manualImages = attachments
+        .filter(a => a.type === 'image' && (a.objectUrl || a.preview))
         .map(a => a.objectUrl || a.preview);
+    const viewImages = captureViewImages.length > 0 ? captureViewImages : manualImages;
 
     if (reportData) {
         return (

@@ -358,15 +358,19 @@ export default function ReportGenerator() {
             if (user) {
                 setSaving(true);
                 try {
-                    const base64Images = await Promise.all(attachments.map(async (attachment) => {
-                        // Use original file for maximum fidelity (no canvas re-compression)
-                        // This ensures the HTML report has the exact same quality as the uploaded file
-                        return await new Promise<string>((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result as string);
-                            reader.readAsDataURL(attachment.file);
-                        });
-                    }));
+                    // Use captureViewImages if available, otherwise read from attachment files
+                    let base64Images: string[];
+                    if (captureViewImages.length > 0) {
+                        base64Images = captureViewImages; // Already data:image/jpeg;base64,... format
+                    } else {
+                        base64Images = await Promise.all(attachments.map(async (attachment) => {
+                            return await new Promise<string>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(attachment.file);
+                            });
+                        }));
+                    }
 
                     const { generateReportHtml } = await import('@/lib/reportHtmlGenerator');
                     const htmlContent = generateReportHtml(

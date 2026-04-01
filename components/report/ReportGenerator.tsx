@@ -654,12 +654,17 @@ export default function ReportGenerator() {
                                                 <Icon name="FileText" size={32} className="mb-2 text-amber-600" />
                                                 <span className="text-xs truncate w-full px-2">{file.file.name}</span>
                                             </div>
-                                        ) : (
+                                        ) : file.preview ? (
                                             <img
                                                 src={file.preview}
                                                 alt="Preview"
                                                 className="w-full h-full object-contain bg-slate-50"
                                             />
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center bg-[#f0ece5]/50 w-full h-full">
+                                                <Icon name="FileImage" size={28} className="text-[#A68B5C]/60 mb-1" />
+                                                <span className="text-xs font-medium text-[#2a2a2a]/50">{file.file.name.replace('capture_page_', 'P').replace('.jpg', '')}</span>
+                                            </div>
                                         )}
 
                                         <button

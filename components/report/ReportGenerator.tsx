@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { db, storage } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDocs, query, orderBy } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
@@ -180,21 +180,40 @@ export default function ReportGenerator() {
                         if (result.materialName && !courseName) setCourseName(result.materialName);
 
                         setCaptureId(result.captureId);
+                        setCaptureProgress(`이미지 로딩 중... (${result.filteredCount}장)`);
 
-                        const placeholders: Attachment[] = [];
-                        for (let i = 0; i < result.filteredCount; i++) {
-                            const blob = new Blob([''], { type: 'image/jpeg' });
-                            const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
-                            placeholders.push({
+                        // Load images directly from Firestore client SDK
+                        const imagesRef = collection(db, 'captures', result.captureId, 'images');
+                        const q = query(imagesRef, orderBy('page'));
+                        const snap = await getDocs(q);
+
+                        const newAttachments: Attachment[] = [];
+                        const loadedViewImages: string[] = [];
+
+                        for (const imgDoc of snap.docs) {
+                            const base64 = imgDoc.data().base64 as string;
+                            const dataUrl = `data:image/jpeg;base64,${base64}`;
+                            loadedViewImages.push(dataUrl);
+
+                            // Convert to File for attachment
+                            const byteString = atob(base64);
+                            const ab = new ArrayBuffer(byteString.length);
+                            const ia = new Uint8Array(ab);
+                            for (let j = 0; j < byteString.length; j++) ia[j] = byteString.charCodeAt(j);
+                            const blob = new Blob([ab], { type: 'image/jpeg' });
+                            const file = new File([blob], `capture_page_${imgDoc.data().page}.jpg`, { type: 'image/jpeg' });
+
+                            newAttachments.push({
                                 id: Math.random().toString(36).substring(7),
                                 file,
                                 type: 'image' as const,
-                                preview: '',
-                                objectUrl: '',
+                                preview: dataUrl,
+                                objectUrl: URL.createObjectURL(blob),
                             });
                         }
 
-                        setAttachments(prev => [...prev, ...placeholders]);
+                        setAttachments(prev => [...prev, ...newAttachments]);
+                        setCaptureViewImages(loadedViewImages);
                         setReportData(null);
                         setCaptureProgress(`캡처 완료! ${result.totalPages}페이지 중 풀이 ${result.filteredCount}페이지 추출`);
                         setCaptureUrl('');

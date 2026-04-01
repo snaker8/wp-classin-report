@@ -115,7 +115,9 @@ async function runCapture(captureId: string, url: string, captureDir: string) {
         await page.setViewport({ width: 1280, height: 5000 });
 
         writeStatus(captureId, { status: 'capturing', progress: '페이지 로딩 중...' });
-        await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // Wait for SPA content to render
+        await page.waitForSelector('img', { timeout: 30000 }).catch(() => {});
         await new Promise(r => setTimeout(r, 2000));
 
         // Extract student info & total page count

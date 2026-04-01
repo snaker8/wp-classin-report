@@ -8,7 +8,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, getDownloadURL } from 'firebase/storage';
 import { ReportView, ReportData } from './ReportView';
 import { generateReport } from '@/app/actions/generateReport';
-import { capturePages } from '@/app/actions/capturePages';
+import { startCapture, checkCapture } from '@/app/actions/capturePages';
 import CameraCapture from '@/components/ui/CameraCapture';
 
 interface Attachment {
@@ -132,60 +132,78 @@ export default function ReportGenerator() {
         await processFiles([file]);
     };
 
-    // URL Capture Handler
+    // URL Capture Handler - polling pattern to avoid 60s Firebase timeout
     const handleUrlCapture = async () => {
         if (!captureUrl.trim()) return;
 
         setIsCapturing(true);
-        setCaptureProgress('페이지 접속 중...');
+        setCaptureProgress('캡처 시작 중...');
         setError(null);
 
         try {
-            setCaptureProgress('페이지 캡처 중... (최대 2분 소요)');
-            const result = await capturePages(captureUrl.trim());
+            // Step 1: Start capture (returns immediately)
+            const { captureId: newCaptureId, error: startError } = await startCapture(captureUrl.trim());
 
-            if (!result) {
-                setError('캡처 응답이 없습니다. 다시 시도해주세요.');
+            if (startError || !newCaptureId) {
+                setError(`캡처 실패: ${startError || '알 수 없는 오류'}`);
+                setIsCapturing(false);
                 return;
             }
 
-            if (result.error) {
-                setError(`캡처 실패: ${result.error}`);
-                return;
+            // Step 2: Poll for completion every 3 seconds
+            const maxPolls = 60; // max 3 minutes
+            for (let poll = 0; poll < maxPolls; poll++) {
+                await new Promise(r => setTimeout(r, 3000));
+
+                const status = await checkCapture(newCaptureId);
+
+                if (status.status === 'capturing') {
+                    setCaptureProgress(status.progress || `캡처 진행 중...`);
+                    continue;
+                }
+
+                if (status.status === 'error') {
+                    setError(`캡처 실패: ${status.result?.error || '알 수 없는 오류'}`);
+                    setIsCapturing(false);
+                    return;
+                }
+
+                if (status.status === 'done' && status.result) {
+                    const result = status.result;
+
+                    // Auto-fill student info
+                    if (result.studentName && !studentName) setStudentName(result.studentName);
+                    if (result.className && !className) setClassName(result.className);
+                    if (result.materialName && !courseName) setCourseName(result.materialName);
+
+                    // Store captureId for server-side image reading
+                    setCaptureId(result.captureId);
+
+                    // Create placeholder attachments
+                    const placeholders: Attachment[] = [];
+                    for (let i = 0; i < result.filteredCount; i++) {
+                        const blob = new Blob([''], { type: 'image/jpeg' });
+                        const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
+                        placeholders.push({
+                            id: Math.random().toString(36).substring(7),
+                            file,
+                            type: 'image' as const,
+                            preview: '',
+                            objectUrl: '',
+                        });
+                    }
+
+                    setAttachments(prev => [...prev, ...placeholders]);
+                    setReportData(null);
+                    setCaptureProgress(`캡처 완료! ${result.totalPages}페이지 중 풀이 ${result.filteredCount}페이지 추출`);
+                    setCaptureUrl('');
+                    setIsCapturing(false);
+                    return;
+                }
             }
 
-            if (result.filteredCount === 0 && result.totalPages === 0) {
-                setError('캡처된 이미지가 없습니다. URL을 확인해주세요.');
-                return;
-            }
-
-            // Auto-fill student info from captured data
-            if (result.studentName && !studentName) setStudentName(result.studentName);
-            if (result.className && !className) setClassName(result.className);
-            if (result.materialName && !courseName) setCourseName(result.materialName);
-
-            // Store captureId - images stay on server, no need to download to client
-            setCaptureId(result.captureId);
-
-            // Create placeholder attachments for preview (just show count)
-            const placeholderAttachments: Attachment[] = [];
-            for (let i = 0; i < result.filteredCount; i++) {
-                const blob = new Blob([''], { type: 'image/jpeg' });
-                const file = new File([blob], `capture_page_${i + 1}.jpg`, { type: 'image/jpeg' });
-                placeholderAttachments.push({
-                    id: Math.random().toString(36).substring(7),
-                    file,
-                    type: 'image' as const,
-                    preview: '',
-                    objectUrl: '',
-                });
-            }
-
-            setAttachments(prev => [...prev, ...placeholderAttachments]);
-            setReportData(null);
-            setCaptureProgress(`캡처 완료! ${result.totalPages}페이지 중 풀이 ${result.filteredCount}페이지 추출`);
-            setCaptureUrl('');
-
+            // Timeout
+            setError('캡처 시간이 초과되었습니다. 다시 시도해주세요.');
         } catch (err) {
             console.error('URL capture error:', err);
             setError(err instanceof Error ? err.message : 'URL 캡처 중 오류가 발생했습니다.');

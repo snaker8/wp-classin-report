@@ -16,32 +16,40 @@ export interface CaptureResult {
     error?: string;
 }
 
+export interface CaptureStatus {
+    status: 'capturing' | 'done' | 'error';
+    progress?: string;
+    result?: CaptureResult;
+}
+
 const MIN_OVERLAY_SIZE = 2000;
+
+function getCaptureDir(captureId: string) {
+    return path.join(os.tmpdir(), 'captures', captureId);
+}
+
+function getStatusPath(captureId: string) {
+    return path.join(getCaptureDir(captureId), '_status.json');
+}
+
+function writeStatus(captureId: string, status: CaptureStatus) {
+    const statusPath = getStatusPath(captureId);
+    fs.writeFileSync(statusPath, JSON.stringify(status));
+}
 
 async function launchBrowser() {
     const isServerless = process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.GCLOUD_PROJECT;
 
     if (isServerless) {
-        // Firebase Cloud Run: use @sparticuz/chromium with explicit bin path
-        // /workspace is the Cloud Run working directory
         const binDir = '/workspace/node_modules/@sparticuz/chromium/bin';
-        console.log(`Serverless detected. Chromium bin dir: ${binDir}, exists: ${fs.existsSync(binDir)}`);
-
-        try {
-            const execPath = await chromium.executablePath(binDir);
-            console.log(`Chromium executablePath: ${execPath}`);
-            return await puppeteerCore.launch({
-                args: chromium.args,
-                executablePath: execPath,
-                headless: true,
-            });
-        } catch (e) {
-            console.error('Chromium launch failed:', e);
-            throw e;
-        }
+        const execPath = await chromium.executablePath(binDir);
+        return await puppeteerCore.launch({
+            args: chromium.args,
+            executablePath: execPath,
+            headless: true,
+        });
     }
 
-    // Local dev: use system Chrome
     const localChrome = process.platform === 'win32'
         ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
         : '/usr/bin/google-chrome';
@@ -53,29 +61,61 @@ async function launchBrowser() {
     });
 }
 
-export async function capturePages(url: string): Promise<CaptureResult> {
-    const empty: CaptureResult = {
-        captureId: '', studentName: '', className: '', materialName: '',
-        totalPages: 0, filteredCount: 0,
-    };
-
+// Step 1: Start capture - returns captureId immediately, runs capture in background
+export async function startCapture(url: string): Promise<{ captureId: string; error?: string }> {
     if (!url || !url.startsWith('http')) {
-        return { ...empty, error: '유효한 URL을 입력해주세요.' };
+        return { captureId: '', error: '유효한 URL을 입력해주세요.' };
     }
 
     const captureId = `cap_${Date.now()}`;
-    const captureDir = path.join(os.tmpdir(), 'captures', captureId);
+    const captureDir = getCaptureDir(captureId);
     fs.mkdirSync(captureDir, { recursive: true });
 
+    // Write initial status
+    writeStatus(captureId, { status: 'capturing', progress: '페이지 접속 중...' });
+
+    // Run capture in background (don't await)
+    runCapture(captureId, url, captureDir).catch(err => {
+        console.error('Background capture error:', err);
+        writeStatus(captureId, {
+            status: 'error',
+            result: {
+                captureId, studentName: '', className: '', materialName: '',
+                totalPages: 0, filteredCount: 0,
+                error: err instanceof Error ? err.message : '캡처 실패',
+            }
+        });
+    });
+
+    return { captureId };
+}
+
+// Step 2: Check capture status - client polls this
+export async function checkCapture(captureId: string): Promise<CaptureStatus> {
+    const statusPath = getStatusPath(captureId);
+    if (!fs.existsSync(statusPath)) {
+        return { status: 'error', result: {
+            captureId, studentName: '', className: '', materialName: '',
+            totalPages: 0, filteredCount: 0, error: '캡처 세션을 찾을 수 없습니다.',
+        }};
+    }
+    const data = fs.readFileSync(statusPath, 'utf-8');
+    return JSON.parse(data) as CaptureStatus;
+}
+
+// Background capture logic
+async function runCapture(captureId: string, url: string, captureDir: string) {
     let browser;
     try {
+        writeStatus(captureId, { status: 'capturing', progress: '브라우저 시작 중...' });
         browser = await launchBrowser();
 
         const page = await browser.newPage();
         await page.setViewport({ width: 1280, height: 5000 });
 
+        writeStatus(captureId, { status: 'capturing', progress: '페이지 로딩 중...' });
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-        await new Promise(r => setTimeout(r, 2500));
+        await new Promise(r => setTimeout(r, 2000));
 
         // Extract student info & total page count
         const info = await page.evaluate(() => {
@@ -101,7 +141,9 @@ export async function capturePages(url: string): Promise<CaptureResult> {
         let savedCount = 0;
 
         for (let i = 0; i < totalPages; i++) {
-            await new Promise(r => setTimeout(r, 600));
+            writeStatus(captureId, { status: 'capturing', progress: `캡처 중... ${i + 1}/${totalPages}` });
+
+            await new Promise(r => setTimeout(r, 500));
 
             // Wait for images to load
             await page.evaluate(() => {
@@ -114,7 +156,7 @@ export async function capturePages(url: string): Promise<CaptureResult> {
                     pending.forEach(img => {
                         img.onload = () => { if (++count >= pending.length) resolve(); };
                     });
-                    setTimeout(resolve, 5000);
+                    setTimeout(resolve, 3000);
                 });
             });
 
@@ -150,9 +192,9 @@ export async function capturePages(url: string): Promise<CaptureResult> {
                 return container || large[0];
             });
 
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 200));
 
-            const filePath = path.join(captureDir, `page_${i + 1}.jpg`);
+            const filePath = path.join(captureDir, `page_${String(i + 1).padStart(3, '0')}.jpg`);
 
             try {
                 await containerHandle.screenshot({ path: filePath, type: 'jpeg', quality: 92 });
@@ -180,21 +222,20 @@ export async function capturePages(url: string): Promise<CaptureResult> {
                     return false;
                 });
                 if (!hasNext) break;
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 1000));
             }
         }
 
         await browser.close();
 
         // Filter: only keep pages with student handwriting
-        const allFiles = fs.readdirSync(captureDir).sort();
+        const allFiles = fs.readdirSync(captureDir).filter(f => f.endsWith('.jpg')).sort();
         const filteredFiles: string[] = [];
         for (let i = 0; i < allFiles.length; i++) {
             if (overlayLengths[i] >= MIN_OVERLAY_SIZE) {
                 filteredFiles.push(allFiles[i]);
             }
         }
-        // Remove non-filtered files, keep filtered ones
         const keepFiles = filteredFiles.length > 0 ? filteredFiles : allFiles;
         for (const f of allFiles) {
             if (!keepFiles.includes(f)) {
@@ -202,27 +243,37 @@ export async function capturePages(url: string): Promise<CaptureResult> {
             }
         }
 
-        console.log(`Capture done: ${savedCount} total, ${filteredFiles.length} with student work, saved to ${captureDir}`);
+        console.log(`Capture done: ${savedCount} total, ${filteredFiles.length} with student work`);
 
-        return {
-            captureId,
-            studentName: info.studentName,
-            className: info.className,
-            materialName: info.materialName,
-            totalPages: savedCount,
-            filteredCount: filteredFiles.length > 0 ? filteredFiles.length : savedCount,
-        };
+        writeStatus(captureId, {
+            status: 'done',
+            result: {
+                captureId,
+                studentName: info.studentName,
+                className: info.className,
+                materialName: info.materialName,
+                totalPages: savedCount,
+                filteredCount: filteredFiles.length > 0 ? filteredFiles.length : savedCount,
+            }
+        });
 
     } catch (err) {
         if (browser) await browser.close();
         console.error('Capture error:', err);
-        return { ...empty, error: err instanceof Error ? `${err.message}` : '페이지 캡처 중 오류가 발생했습니다.' };
+        writeStatus(captureId, {
+            status: 'error',
+            result: {
+                captureId, studentName: '', className: '', materialName: '',
+                totalPages: 0, filteredCount: 0,
+                error: err instanceof Error ? err.message : '캡처 실패',
+            }
+        });
     }
 }
 
 // Read captured images from /tmp as base64 (used by generateReport)
 export async function getCaptureImages(captureId: string): Promise<string[]> {
-    const captureDir = path.join(os.tmpdir(), 'captures', captureId);
+    const captureDir = getCaptureDir(captureId);
     if (!fs.existsSync(captureDir)) return [];
 
     const files = fs.readdirSync(captureDir).filter(f => f.endsWith('.jpg')).sort();

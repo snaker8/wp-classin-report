@@ -819,7 +819,7 @@ export default function ReportGenerator() {
                                 )}
 
                                 <div
-                                    className="max-w-[90vw] max-h-[85vh] overflow-auto rounded-xl bg-white shadow-2xl"
+                                    className="max-w-[90vw] max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-2xl"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {attachments[previewIndex].type === 'pdf' ? (
@@ -831,8 +831,8 @@ export default function ReportGenerator() {
                                         <img
                                             src={attachments[previewIndex].preview}
                                             alt={`Preview ${previewIndex + 1}`}
-                                            className="w-auto h-auto object-contain rounded-xl"
-                                            style={{ maxHeight: '85vh', maxWidth: '90vw' }}
+                                            className="w-full h-auto rounded-xl"
+                                            style={{ maxWidth: '90vw' }}
                                         />
                                     ) : (
                                         <div className="text-slate-400 text-center p-10">

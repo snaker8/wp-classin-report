@@ -819,7 +819,7 @@ export default function ReportGenerator() {
                                 )}
 
                                 <div
-                                    className="flex items-center justify-center px-16 py-14"
+                                    className="absolute inset-0 flex items-center justify-center pt-14 pb-4 px-14"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {attachments[previewIndex].type === 'pdf' ? (
@@ -831,8 +831,7 @@ export default function ReportGenerator() {
                                         <img
                                             src={attachments[previewIndex].preview}
                                             alt={`Preview ${previewIndex + 1}`}
-                                            className="rounded-lg shadow-2xl bg-white object-contain"
-                                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
+                                            className="rounded-lg shadow-2xl bg-white object-contain max-h-full max-w-full"
                                         />
                                     ) : (
                                         <div className="text-slate-400 text-center p-10 bg-white rounded-xl">

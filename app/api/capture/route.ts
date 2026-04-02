@@ -91,17 +91,26 @@ export async function POST(req: NextRequest) {
                 await updateStatus(captureId, { status: 'capturing', progress: `캡처 중... ${i + 1}/${totalPages}` });
                 await new Promise(r => setTimeout(r, 500));
 
+                // Wait for ALL large images to load, including the student annotation overlay
+                // The overlay is a data:image PNG that may take time to appear in DOM after page transition
                 await page.evaluate(() => {
                     return new Promise<void>((resolve) => {
-                        const imgs = Array.from(document.querySelectorAll('img'));
-                        const large = imgs.filter(img => img.getBoundingClientRect().width > 300);
-                        const pending = large.filter(img => !img.complete);
-                        if (pending.length === 0) return resolve();
-                        let count = 0;
-                        pending.forEach(img => {
-                            img.onload = () => { if (++count >= pending.length) resolve(); };
-                        });
-                        setTimeout(resolve, 3000);
+                        const check = () => {
+                            const imgs = Array.from(document.querySelectorAll('img'));
+                            const large = imgs.filter(img => img.getBoundingClientRect().width > 300);
+                            // Need at least 1 large image, and check if data:image overlay exists
+                            const hasOverlay = large.some(img => img.src.startsWith('data:image'));
+                            const allLoaded = large.every(img => img.complete);
+                            if (large.length > 0 && allLoaded && hasOverlay) {
+                                resolve();
+                            } else {
+                                // Retry in 200ms
+                                setTimeout(check, 200);
+                            }
+                        };
+                        check();
+                        // Safety timeout
+                        setTimeout(resolve, 5000);
                     });
                 });
 
@@ -150,7 +159,7 @@ export async function POST(req: NextRequest) {
                         return false;
                     });
                     if (!hasNext) break;
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 2000));
                 }
             }
 

@@ -819,23 +819,23 @@ export default function ReportGenerator() {
                                 )}
 
                                 <div
-                                    className="max-w-[90vw] max-h-[85vh] overflow-auto"
+                                    className="max-w-[90vw] max-h-[85vh] overflow-auto rounded-xl bg-white shadow-2xl"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {attachments[previewIndex].type === 'pdf' ? (
-                                        <div className="text-white text-center p-10">
-                                            <Icon name="FileText" size={64} className="mx-auto mb-4 text-amber-400" />
-                                            <p>{attachments[previewIndex].file.name}</p>
+                                        <div className="text-slate-500 text-center p-10">
+                                            <Icon name="FileText" size={64} className="mx-auto mb-4 text-amber-500" />
+                                            <p className="font-medium">{attachments[previewIndex].file.name}</p>
                                         </div>
                                     ) : attachments[previewIndex].preview ? (
                                         <img
                                             src={attachments[previewIndex].preview}
                                             alt={`Preview ${previewIndex + 1}`}
-                                            className="max-w-full h-auto object-contain"
-                                            style={{ maxHeight: '85vh' }}
+                                            className="w-auto h-auto object-contain rounded-xl"
+                                            style={{ maxHeight: '85vh', maxWidth: '90vw' }}
                                         />
                                     ) : (
-                                        <div className="text-white/50 text-center p-10">
+                                        <div className="text-slate-400 text-center p-10">
                                             <Icon name="FileImage" size={64} className="mx-auto mb-4" />
                                             <p>미리보기 없음</p>
                                         </div>

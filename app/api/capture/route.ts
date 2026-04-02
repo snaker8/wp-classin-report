@@ -8,10 +8,6 @@ import path from 'path';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
-// Overlay = student handwriting layer (data:image PNG on transparent background)
-// Empty overlay (no writing) is still ~200-500 chars of base64 header
-// Any actual writing makes it 1000+ chars, so threshold 500 catches all real work
-const MIN_OVERLAY_SIZE = 500;
 
 async function updateStatus(captureId: string, data: Record<string, unknown>) {
     await updateDoc(doc(db, 'captures', captureId), data);
@@ -89,7 +85,6 @@ export async function POST(req: NextRequest) {
             });
 
             const totalPages = info.pageTotal || 30;
-            const overlayLengths: number[] = [];
             const capturedBase64: string[] = [];
 
             for (let i = 0; i < totalPages; i++) {
@@ -109,16 +104,6 @@ export async function POST(req: NextRequest) {
                         setTimeout(resolve, 3000);
                     });
                 });
-
-                const overlayLen = await page.evaluate(() => {
-                    const imgs = Array.from(document.querySelectorAll('img'));
-                    const large = imgs.filter(img => img.getBoundingClientRect().width > 300 && img.getBoundingClientRect().height > 200);
-                    for (const img of large) {
-                        if (img.src.startsWith('data:image')) return img.src.length;
-                    }
-                    return 0;
-                });
-                overlayLengths.push(overlayLen);
 
                 const containerHandle = await page.evaluateHandle(() => {
                     const imgs = Array.from(document.querySelectorAll('img'));
@@ -171,21 +156,12 @@ export async function POST(req: NextRequest) {
 
             await browser.close();
 
-            // Filter: only keep pages with student handwriting
-            const filteredImages: string[] = [];
+            console.log(`Capture done: ${capturedBase64.length} total`);
+
+            // Store ALL images - teacher will manually review and delete unwanted ones
             for (let i = 0; i < capturedBase64.length; i++) {
-                if (overlayLengths[i] >= MIN_OVERLAY_SIZE) {
-                    filteredImages.push(capturedBase64[i]);
-                }
-            }
-            const finalImages = filteredImages.length > 0 ? filteredImages : capturedBase64;
-
-            console.log(`Capture done: ${capturedBase64.length} total, ${filteredImages.length} with student work`);
-
-            // Store images in sub-collection (each image as separate doc to avoid 1MB limit)
-            for (let i = 0; i < finalImages.length; i++) {
                 await setDoc(doc(db, 'captures', captureId, 'images', String(i)), {
-                    base64: finalImages[i],
+                    base64: capturedBase64[i],
                     page: i + 1,
                 });
             }
@@ -193,14 +169,14 @@ export async function POST(req: NextRequest) {
             await updateStatus(captureId, {
                 status: 'done',
                 progress: '완료',
-                imageCount: finalImages.length,
+                imageCount: capturedBase64.length,
                 result: {
                     captureId,
                     studentName: info.studentName,
                     className: info.className,
                     materialName: info.materialName,
                     totalPages: capturedBase64.length,
-                    filteredCount: filteredImages.length > 0 ? filteredImages.length : capturedBase64.length,
+                    filteredCount: capturedBase64.length,
                 }
             });
 

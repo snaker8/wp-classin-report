@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { db, storage } from '@/lib/firebase';
@@ -61,6 +61,34 @@ export default function ReportGenerator() {
     const [captureProgress, setCaptureProgress] = useState('');
     const [captureId, setCaptureId] = useState<string>('');
     const [captureViewImages, setCaptureViewImages] = useState<string[]>([]);
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+    // Keyboard navigation for preview lightbox
+    const handlePreviewKey = useCallback((e: KeyboardEvent) => {
+        if (previewIndex === null) return;
+        if (e.key === 'ArrowRight' && previewIndex < attachments.length - 1) setPreviewIndex(previewIndex + 1);
+        if (e.key === 'ArrowLeft' && previewIndex > 0) setPreviewIndex(previewIndex - 1);
+        if (e.key === 'Escape') setPreviewIndex(null);
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            const id = attachments[previewIndex].id;
+            const nextIdx = previewIndex < attachments.length - 1 ? previewIndex : previewIndex > 0 ? previewIndex - 1 : null;
+            removeAttachment(id);
+            setPreviewIndex(nextIdx);
+        }
+    }, [previewIndex, attachments]);
+
+    useEffect(() => {
+        if (previewIndex !== null) {
+            window.addEventListener('keydown', handlePreviewKey);
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            window.removeEventListener('keydown', handlePreviewKey);
+            document.body.style.overflow = '';
+        };
+    }, [previewIndex, handlePreviewKey]);
 
     // Set Teacher Name from User Data
     useEffect(() => {
@@ -697,37 +725,122 @@ export default function ReportGenerator() {
                             />
                         )}
 
-                        {/* File Previews */}
+                        {/* File Previews - Thumbnail Grid */}
                         {attachments.length > 0 && (
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-                                {attachments.map((file) => (
-                                    <div key={file.id} className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm aspect-square flex items-center justify-center">
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mt-4">
+                                {attachments.map((file, idx) => (
+                                    <div
+                                        key={file.id}
+                                        className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white shadow-sm aspect-[3/4] flex items-center justify-center cursor-pointer hover:border-[#A68B5C]/40 hover:shadow-md transition-all"
+                                        onClick={() => setPreviewIndex(idx)}
+                                    >
                                         {file.type === 'pdf' ? (
                                             <div className="flex flex-col items-center justify-center text-slate-500 p-2 text-center">
-                                                <Icon name="FileText" size={32} className="mb-2 text-amber-600" />
-                                                <span className="text-xs truncate w-full px-2">{file.file.name}</span>
+                                                <Icon name="FileText" size={24} className="mb-1 text-amber-600" />
+                                                <span className="text-[10px] truncate w-full px-1">{file.file.name}</span>
                                             </div>
                                         ) : file.preview ? (
                                             <img
                                                 src={file.preview}
-                                                alt="Preview"
-                                                className="w-full h-full object-contain bg-slate-50"
+                                                alt={`Preview ${idx + 1}`}
+                                                className="w-full h-full object-cover object-top"
                                             />
                                         ) : (
                                             <div className="flex flex-col items-center justify-center bg-[#f0ece5]/50 w-full h-full">
-                                                <Icon name="FileImage" size={28} className="text-[#A68B5C]/60 mb-1" />
-                                                <span className="text-xs font-medium text-[#2a2a2a]/50">{file.file.name.replace('capture_page_', 'P').replace('.jpg', '')}</span>
+                                                <Icon name="FileImage" size={24} className="text-[#A68B5C]/60 mb-1" />
+                                                <span className="text-[10px] font-medium text-[#2a2a2a]/50">{file.file.name.replace('capture_page_', 'P').replace('.jpg', '')}</span>
                                             </div>
                                         )}
-
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/40 to-transparent p-1">
+                                            <span className="text-white text-[10px] font-medium">{idx + 1}</span>
+                                        </div>
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                            <Icon name="ZoomIn" size={18} className="text-white drop-shadow-lg" />
+                                        </div>
                                         <button
-                                            onClick={() => removeAttachment(file.id)}
-                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={(e) => { e.stopPropagation(); removeAttachment(file.id); }}
+                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                                         >
-                                            <Icon name="X" size={14} />
+                                            <Icon name="X" size={12} />
                                         </button>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {/* Preview Lightbox */}
+                        {previewIndex !== null && attachments[previewIndex] && (
+                            <div
+                                className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+                                onClick={() => setPreviewIndex(null)}
+                            >
+                                <button
+                                    onClick={() => setPreviewIndex(null)}
+                                    className="absolute top-4 right-4 z-10 text-white/70 hover:text-white p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                >
+                                    <Icon name="X" size={24} />
+                                </button>
+
+                                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
+                                    <span className="text-white/80 text-sm font-medium bg-white/10 px-4 py-1.5 rounded-full backdrop-blur-sm">
+                                        {previewIndex + 1} / {attachments.length}
+                                    </span>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const id = attachments[previewIndex].id;
+                                            const nextIdx = previewIndex < attachments.length - 1 ? previewIndex : previewIndex > 0 ? previewIndex - 1 : null;
+                                            removeAttachment(id);
+                                            setPreviewIndex(nextIdx);
+                                        }}
+                                        className="text-red-400 hover:text-red-300 text-sm font-medium bg-red-500/20 hover:bg-red-500/30 px-4 py-1.5 rounded-full backdrop-blur-sm flex items-center gap-1.5 transition-all"
+                                    >
+                                        <Icon name="Trash2" size={14} />
+                                        삭제
+                                    </button>
+                                </div>
+
+                                {previewIndex > 0 && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setPreviewIndex(previewIndex - 1); }}
+                                        className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                    >
+                                        <Icon name="ChevronLeft" size={28} />
+                                    </button>
+                                )}
+
+                                {previewIndex < attachments.length - 1 && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setPreviewIndex(previewIndex + 1); }}
+                                        className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                    >
+                                        <Icon name="ChevronRight" size={28} />
+                                    </button>
+                                )}
+
+                                <div
+                                    className="max-w-[90vw] max-h-[85vh] overflow-auto"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    {attachments[previewIndex].type === 'pdf' ? (
+                                        <div className="text-white text-center p-10">
+                                            <Icon name="FileText" size={64} className="mx-auto mb-4 text-amber-400" />
+                                            <p>{attachments[previewIndex].file.name}</p>
+                                        </div>
+                                    ) : attachments[previewIndex].preview ? (
+                                        <img
+                                            src={attachments[previewIndex].preview}
+                                            alt={`Preview ${previewIndex + 1}`}
+                                            className="max-w-full h-auto object-contain"
+                                            style={{ maxHeight: '85vh' }}
+                                        />
+                                    ) : (
+                                        <div className="text-white/50 text-center p-10">
+                                            <Icon name="FileImage" size={64} className="mx-auto mb-4" />
+                                            <p>미리보기 없음</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

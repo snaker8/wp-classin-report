@@ -8,7 +8,10 @@ import path from 'path';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
-const MIN_OVERLAY_SIZE = 2000;
+// Overlay = student handwriting layer (data:image PNG on transparent background)
+// Empty overlay (no writing) is still ~200-500 chars of base64 header
+// Any actual writing makes it 1000+ chars, so threshold 500 catches all real work
+const MIN_OVERLAY_SIZE = 500;
 
 async function updateStatus(captureId: string, data: Record<string, unknown>) {
     await updateDoc(doc(db, 'captures', captureId), data);

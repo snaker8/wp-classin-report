@@ -803,7 +803,7 @@ export default function ReportGenerator() {
                                 {previewIndex > 0 && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); setPreviewIndex(previewIndex - 1); }}
-                                        className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                        className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white hover:text-white p-2 md:p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all shadow-lg"
                                     >
                                         <Icon name="ChevronLeft" size={28} />
                                     </button>
@@ -812,18 +812,18 @@ export default function ReportGenerator() {
                                 {previewIndex < attachments.length - 1 && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); setPreviewIndex(previewIndex + 1); }}
-                                        className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                        className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white hover:text-white p-2 md:p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all shadow-lg"
                                     >
                                         <Icon name="ChevronRight" size={28} />
                                     </button>
                                 )}
 
                                 <div
-                                    className="max-w-[90vw] max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-2xl"
+                                    className="flex items-center justify-center px-16 py-14"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     {attachments[previewIndex].type === 'pdf' ? (
-                                        <div className="text-slate-500 text-center p-10">
+                                        <div className="text-slate-500 text-center p-10 bg-white rounded-xl">
                                             <Icon name="FileText" size={64} className="mx-auto mb-4 text-amber-500" />
                                             <p className="font-medium">{attachments[previewIndex].file.name}</p>
                                         </div>
@@ -831,11 +831,11 @@ export default function ReportGenerator() {
                                         <img
                                             src={attachments[previewIndex].preview}
                                             alt={`Preview ${previewIndex + 1}`}
-                                            className="w-full h-auto rounded-xl"
-                                            style={{ maxWidth: '90vw' }}
+                                            className="rounded-lg shadow-2xl bg-white object-contain"
+                                            style={{ maxHeight: '80vh', maxWidth: '80vw' }}
                                         />
                                     ) : (
-                                        <div className="text-slate-400 text-center p-10">
+                                        <div className="text-slate-400 text-center p-10 bg-white rounded-xl">
                                             <Icon name="FileImage" size={64} className="mx-auto mb-4" />
                                             <p>미리보기 없음</p>
                                         </div>

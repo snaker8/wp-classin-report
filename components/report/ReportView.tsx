@@ -354,12 +354,12 @@ export const ReportView = ({
                         </div>
                     </div>
 
-                    {/* Image Section - Thumbnail Grid */}
+                    {/* Image Section */}
                     <section className="mt-12 md:mt-16 pt-8 border-t border-[#2C2C2A]/10">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-base md:text-lg font-serif font-bold text-slate-900 flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 bg-[#A68B5C] rounded-full"></span> Board Analytics
-                                <span className="text-xs font-normal text-[#2C2C2A]/50 ml-1">({images.length})</span>
+                                {images.length > 5 && <span className="text-xs font-normal text-[#2C2C2A]/50 ml-1">({images.length})</span>}
                             </h3>
                             <button
                                 onClick={() => setIsEnhancedMode(!isEnhancedMode)}
@@ -370,28 +370,45 @@ export const ReportView = ({
                             </button>
                         </div>
                         <div className="bg-white/30 p-2 md:p-4 rounded-xl border border-[#2C2C2A]/5 backdrop-blur-sm">
-                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 md:gap-3">
-                                {images.map((img, idx) => (
-                                    <div
-                                        key={idx}
-                                        onClick={() => setLightboxIndex(idx)}
-                                        className="relative rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm cursor-pointer group hover:border-[#A68B5C]/40 hover:shadow-md transition-all aspect-[3/4]"
-                                    >
-                                        <img
-                                            src={img}
-                                            alt={`문제 ${idx + 1}`}
-                                            className={`w-full h-full object-cover object-top transition-all duration-300 group-hover:scale-105 ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
-                                            loading="lazy"
-                                        />
-                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-1.5 md:p-2">
-                                            <span className="text-white text-[10px] md:text-xs font-medium">{idx + 1}</span>
+                            {images.length <= 5 ? (
+                                /* 기존 판서 업로드: 이미지 크게 세로 배치 */
+                                <div className="space-y-4">
+                                    {images.map((img, idx) => (
+                                        <div key={idx} className="rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm">
+                                            <img
+                                                src={img}
+                                                alt={`Board ${idx + 1}`}
+                                                className={`w-full h-auto object-contain transition-all duration-500 ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
+                                                loading="lazy"
+                                            />
                                         </div>
-                                        <div className="absolute inset-0 bg-[#A68B5C]/0 group-hover:bg-[#A68B5C]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                            <Icon name="ZoomIn" size={20} className="text-white drop-shadow-lg" />
+                                    ))}
+                                </div>
+                            ) : (
+                                /* URL 캡처: 썸네일 그리드 + 라이트박스 */
+                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 md:gap-3">
+                                    {images.map((img, idx) => (
+                                        <div
+                                            key={idx}
+                                            onClick={() => setLightboxIndex(idx)}
+                                            className="relative rounded-lg overflow-hidden border border-[#2C2C2A]/10 bg-white shadow-sm cursor-pointer group hover:border-[#A68B5C]/40 hover:shadow-md transition-all aspect-[3/4]"
+                                        >
+                                            <img
+                                                src={img}
+                                                alt={`문제 ${idx + 1}`}
+                                                className={`w-full h-full object-cover object-top transition-all duration-300 group-hover:scale-105 ${isEnhancedMode ? 'grayscale contrast-[1.2] brightness-105 saturate-0' : ''}`}
+                                                loading="lazy"
+                                            />
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-1.5 md:p-2">
+                                                <span className="text-white text-[10px] md:text-xs font-medium">{idx + 1}</span>
+                                            </div>
+                                            <div className="absolute inset-0 bg-[#A68B5C]/0 group-hover:bg-[#A68B5C]/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                <Icon name="ZoomIn" size={20} className="text-white drop-shadow-lg" />
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </section>
 

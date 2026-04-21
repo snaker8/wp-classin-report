@@ -435,7 +435,7 @@ export const ReportView = ({
                             {lightboxIndex > 0 && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
-                                    className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                    className="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-10 text-white hover:text-white p-2 md:p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all shadow-lg"
                                 >
                                     <Icon name="ChevronLeft" size={28} />
                                 </button>
@@ -445,7 +445,7 @@ export const ReportView = ({
                             {lightboxIndex < images.length - 1 && (
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
-                                    className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2 md:p-3 rounded-full bg-white/10 hover:bg-white/20 transition-all"
+                                    className="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-10 text-white hover:text-white p-2 md:p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all shadow-lg"
                                 >
                                     <Icon name="ChevronRight" size={28} />
                                 </button>

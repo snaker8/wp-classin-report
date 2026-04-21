@@ -7,6 +7,12 @@ import { auth, db } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/ui/Icon';
 
+function normalizeCenterName(raw: string): string {
+    const trimmed = (raw || '').trim();
+    if (trimmed === '동래본원' || trimmed === '동래센터') return '동래';
+    return trimmed;
+}
+
 export default function SignupPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -32,7 +38,7 @@ export default function SignupPage() {
 
             // 3. Check for Invitation
             let assignedRole: string = 'teacher';
-            let assignedCenter = centerName;
+            let assignedCenter = normalizeCenterName(centerName);
             let assignedDept = department;
 
             try {
@@ -41,7 +47,7 @@ export default function SignupPage() {
                 if (inviteDoc.exists()) {
                     const inviteData = inviteDoc.data();
                     assignedRole = inviteData.role || 'teacher';
-                    assignedCenter = inviteData.centerName || centerName;
+                    assignedCenter = normalizeCenterName(inviteData.centerName || centerName);
                     assignedDept = inviteData.department || department;
                 }
             } catch (inviteErr) {
@@ -124,7 +130,7 @@ export default function SignupPage() {
                                         value={centerName}
                                         onChange={(e) => setCenterName(e.target.value)}
                                         className="w-full pb-2.5 bg-transparent border-b border-[#2a2a2a]/20 text-[#2a2a2a] font-light focus:outline-none focus:border-[#2a2a2a]/40 transition-all placeholder:text-[#2a2a2a]/40 text-sm"
-                                        placeholder="지점 (예: 대치 본원)"
+                                        placeholder="지점 (예: 동래)"
                                     />
                                     <input
                                         type="text"

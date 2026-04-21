@@ -57,6 +57,16 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
     // Admin Tabs
     const [activeTab, setActiveTab] = useState<'reports' | 'teachers'>('reports');
 
+    // Copy link feedback
+    const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    const handleCopyLink = (reportId: string) => {
+        const url = `${window.location.origin}/report/${reportId}`;
+        navigator.clipboard.writeText(url);
+        setCopiedId(reportId);
+        setTimeout(() => setCopiedId(prev => (prev === reportId ? null : prev)), 2000);
+    };
+
     useEffect(() => {
         if (!loading) {
             if (!user) {
@@ -726,6 +736,14 @@ export default function DashboardCore({ viewMode }: DashboardCoreProps) {
                                                                 >
                                                                     <Icon name="Link" size={12} />
                                                                     <span>Open</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleCopyLink(report.id)}
+                                                                    className={`flex items-center justify-center gap-2 border px-5 py-2.5 rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.02)] transition-all text-[11px] font-medium uppercase tracking-[0.1em] ${copiedId === report.id ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-white/70 hover:bg-white text-foreground/80 border-white'}`}
+                                                                    title="학부모 전송 링크 복사"
+                                                                >
+                                                                    <Icon name={copiedId === report.id ? "Check" : "Copy"} size={12} />
+                                                                    <span>{copiedId === report.id ? '복사됨' : '링크복사'}</span>
                                                                 </button>
                                                                 {(viewMode === 'admin' || report.teacherName === userData?.displayName) && (
                                                                     <button
